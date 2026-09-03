@@ -16,6 +16,17 @@ export interface CompanyCategory {
   companies: string[];
 }
 
+export interface RoleProjectLevels {
+  beginner: string[];
+  intermediate: string[];
+  advanced: string[];
+}
+
+export interface CertificationItem {
+  name: string;
+  type: 'FREE' | 'PAID';
+}
+
 export interface ITRole {
   id: string;
   title: string;
@@ -35,6 +46,14 @@ export interface ITRole {
     jobOpenings: string;
     growthRate: string;
   };
+  projects?: RoleProjectLevels;
+  certifications?: CertificationItem[];
+  tools?: string[];
+  learningResources?: any[];
+  roadmap?: any[];
+  assessmentQuestions?: any[];
+  interviewQuestions?: any[];
+  practicePlatforms?: any[];
 }
 
 export const categories = [
@@ -89,7 +108,17 @@ export const itRoles: ITRole[] = [
       averageSalary: '$95k',
       jobOpenings: '120k+',
       growthRate: '25%'
-    }
+    },
+    projects: {
+      beginner: ["Personal Portfolio Website", "Task Manager App", "Basic Weather API Project"],
+      intermediate: ["Full Stack E-commerce Application", "Real-Time Chat App", "RESTful SaaS API Platform"],
+      advanced: ["Multi-Tenant Cloud Platform", "Microservices Analytics Architecture", "AI Integration Ecosystem"]
+    },
+    certifications: [
+      { name: "AWS Certified Developer – Associate", type: "PAID" },
+      { name: "Meta Front-End Developer Certificate", type: "FREE" },
+      { name: "MongoDB Certified Developer Associate", type: "PAID" }
+    ]
   },
   {
     id: 'frontend-developer',
@@ -128,7 +157,17 @@ export const itRoles: ITRole[] = [
       averageSalary: '$85k',
       jobOpenings: '95k+',
       growthRate: '20%'
-    }
+    },
+    projects: {
+      beginner: ["Responsive Personal Portfolio", "Interactive Quiz Web App", "CSS Design System Component Library"],
+      intermediate: ["E-Commerce Web Storefront", "Real-Time Analytics Dashboard", "Kanban Task Management Frontend"],
+      advanced: ["High-Performance Design System Platform", "Micro-Frontend Web Application", "PWA Offline First Platform"]
+    },
+    certifications: [
+      { name: "Meta Front-End Developer Specialization", type: "FREE" },
+      { name: "freeCodeCamp Responsive Web Design", type: "FREE" },
+      { name: "React Certified Developer", type: "PAID" }
+    ]
   },
   {
     id: 'backend-developer',
@@ -970,6 +1009,45 @@ export const itRoles: ITRole[] = [
       jobOpenings: '32k+',
       growthRate: '28%'
     }
+  },
+  {
+    id: 'vibe-coding',
+    title: 'Vibe Coding',
+    category: 'Software Development',
+    tags: ['Coding', 'Emerging', 'Hybrid'],
+    shortDescription: 'Leverages AI coding assistants, prompt engineering, and LLM orchestration to build production applications dynamically.',
+    alternateNames: ['AI Data Administrator', 'AI Developer', 'Prompt Engineer Developer'],
+    technicalSkills: ['AI-assisted coding', 'Prompt Engineering', 'Context Engineering', 'LLMs', 'AI Code Generation', 'Git/GitHub', 'REST APIs', 'React', 'Python'],
+    softSkills: ['Problem Solving', 'Critical Thinking', 'Creativity', 'Requirement Understanding', 'Communication', 'Adaptability'],
+    careerLadder: [
+      { title: 'Junior Vibe Engineer', yearsOfExperience: '0-2 years', salaryRange: '$60k - $85k' },
+      { title: 'Vibe Coding Specialist', yearsOfExperience: '2-5 years', salaryRange: '$85k - $125k' },
+      { title: 'Senior AI Software Engineer', yearsOfExperience: '5-8 years', salaryRange: '$125k - $175k' }
+    ],
+    scope: 'Vibe coding specialists orchestrate AI code generators, autonomous agents, and context windows to rapidly design, build, and deploy production software.',
+    jobMarketProjection: 'Exponential 45% growth. High demand across startups and enterprises modernizing software workflows with generative AI.',
+    industry: ['AI Tech Startups', 'SaaS Platforms', 'Developer Tools', 'Fintech', 'Enterprise IT'],
+    hiringCompanies: [
+      {
+        category: 'AI Pioneers',
+        companies: ['OpenAI', 'Anthropic', 'Google AI', 'Microsoft', 'GitHub', 'Replit']
+      }
+    ],
+    stats: {
+      averageSalary: '$115k',
+      jobOpenings: '45k+',
+      growthRate: '45%'
+    },
+    projects: {
+      beginner: ["AI-Assisted Personal Web App", "Prompt-Based Code Generator Tool", "AI Calculator & UI"],
+      intermediate: ["AI-Powered Full-Stack Application", "LLM-Assisted Task Automation Suite", "AI Coding Assistant CLI"],
+      advanced: ["Production-Grade AI Development Platform", "Multi-Agent Software System", "Autonomous Coding Agent Framework"]
+    },
+    certifications: [
+      { name: "DeepLearning.AI Prompt Engineering", type: "FREE" },
+      { name: "Google AI & LLM Specialization", type: "FREE" },
+      { name: "GitHub Copilot Certified Developer", type: "PAID" }
+    ]
   }
 ];
 

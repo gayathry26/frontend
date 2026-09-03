@@ -1,0 +1,9 @@
+name = "it-career-hub-automation-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[triggers]
+crons = ["0 */6 * * *"] # Executes every 6 hours (UTC)
+
+[vars]
+TARGET_WEBHOOK_URL = "https://your-domain.com/api/admin/automation/trigger"

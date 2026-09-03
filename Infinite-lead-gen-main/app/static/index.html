@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Maps Scraper</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <h1>Google Maps Scraper</h1>
+        <p>Enter what to scrape and location. Get structured JSON for places like shops, clinics, and services.</p>
+      </header>
+
+      <form id="maps-form" class="composer">
+        <label for="what-to-scrape">What to scrape</label>
+        <input
+          id="what-to-scrape"
+          name="what_to_scrape"
+          placeholder="Example: Bakery"
+          required
+        />
+
+        <label for="location">Location</label>
+        <input
+          id="location"
+          name="location"
+          placeholder="Example: Coimbatore"
+          required
+        />
+
+        <button id="run-button" type="submit">Scrape Google Maps</button>
+      </form>
+
+      <section class="result-panel">
+        <p id="status" class="status">Ready. Try: Bakery + Coimbatore</p>
+        <div class="actions">
+          <button id="download-json" type="button" disabled>Download JSON</button>
+        </div>
+        <pre id="json-output" class="output"></pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

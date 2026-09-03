@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search, Filter, Briefcase, TrendingUp, Code, Palette, Sparkles, Users } from 'lucide-react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { itRoles, categories, type Tag } from '@/data/itRoles';
+import { itRoles, categories, type Tag, type ITRole } from '@/data/itRoles';
 
 const tagIcons: Record<Tag, any> = {
   'Coding': Code,
@@ -28,9 +28,21 @@ const tagColors: Record<Tag, string> = {
 };
 
 export default function Home() {
+  const [roles, setRoles] = useState<ITRole[]>(itRoles);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/roles', { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.roles && Array.isArray(data.roles) && data.roles.length > 0) {
+          setRoles(data.roles);
+        }
+      })
+      .catch(err => console.error('Error fetching live MongoDB roles:', err));
+  }, []);
 
   const allTags: Tag[] = ['Coding', 'Non-Coding', 'Creative', 'Emerging', 'Management', 'Hybrid'];
 
@@ -41,24 +53,24 @@ export default function Home() {
   };
 
   const filteredRoles = useMemo(() => {
-    return itRoles.filter(role => {
+    return roles.filter(role => {
       // Search filter
       const matchesSearch = searchQuery === '' || 
         role.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         role.shortDescription.toLowerCase().includes(searchQuery.toLowerCase()) ||
         role.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        role.alternateNames.some(name => name.toLowerCase().includes(searchQuery.toLowerCase()));
+        (role.alternateNames && role.alternateNames.some(name => name.toLowerCase().includes(searchQuery.toLowerCase())));
 
       // Tag filter
       const matchesTags = selectedTags.length === 0 || 
-        selectedTags.some(tag => role.tags.includes(tag));
+        selectedTags.some(tag => role.tags && role.tags.includes(tag));
 
       // Category filter
       const matchesCategory = !selectedCategory || role.category === selectedCategory;
 
       return matchesSearch && matchesTags && matchesCategory;
     });
-  }, [searchQuery, selectedTags, selectedCategory]);
+  }, [roles, searchQuery, selectedTags, selectedCategory]);
 
   const rolesByCategory = useMemo(() => {
     const grouped: Record<string, typeof itRoles> = {};
@@ -81,9 +93,21 @@ export default function Home() {
               <Briefcase className="h-6 w-6 text-primary" />
               <span className="text-xl font-bold">IT Career Hub</span>
             </Link>
-            <nav className="flex items-center gap-4">
+            <nav className="flex items-center gap-3">
+              <Link href="/dashboard">
+                <Button variant="outline">My Dashboard</Button>
+              </Link>
+              <Link href="/opportunities">
+                <Button variant="default" className="bg-blue-600 hover:bg-blue-700 text-white font-medium">Opportunities</Button>
+              </Link>
               <Link href="/compare">
                 <Button variant="outline">Compare Roles</Button>
+              </Link>
+              <Link href="/companies">
+                <Button variant="outline">Companies</Button>
+              </Link>
+              <Link href="/admin/data-management">
+                <Button variant="outline">Admin</Button>
               </Link>
             </nav>
           </div>
@@ -126,18 +150,19 @@ export default function Home() {
             </div>
             <div className="flex flex-wrap gap-2">
               {allTags.map(tag => {
-                const Icon = tagIcons[tag];
+                const Icon = tagIcons[tag] || Code;
                 const isSelected = selectedTags.includes(tag);
+                const colorClass = tagColors[tag] || 'bg-primary/10 text-primary';
                 return (
                   <Badge
                     key={tag}
                     variant={isSelected ? "default" : "outline"}
                     className={`cursor-pointer px-4 py-2 text-sm font-medium transition-all ${
-                      isSelected ? tagColors[tag] : 'hover:bg-accent'
+                      isSelected ? colorClass : 'hover:bg-accent'
                     }`}
                     onClick={() => toggleTag(tag)}
                   >
-                    <Icon className="h-4 w-4 mr-1" />
+                    {Icon && <Icon className="h-4 w-4 mr-1" />}
                     {tag}
                   </Badge>
                 );
@@ -215,15 +240,16 @@ export default function Home() {
                               </CardHeader>
                               <CardContent className="space-y-4">
                                 <div className="flex flex-wrap gap-1.5">
-                                  {role.tags.map(tag => {
-                                    const Icon = tagIcons[tag];
+                                  {role.tags && role.tags.map(tag => {
+                                    const Icon = tagIcons[tag] || Code;
+                                    const colorClass = tagColors[tag] || 'bg-primary/10 text-primary';
                                     return (
                                       <Badge
                                         key={tag}
                                         variant="secondary"
-                                        className={`text-xs ${tagColors[tag]}`}
+                                        className={`text-xs ${colorClass}`}
                                       >
-                                        <Icon className="h-3 w-3 mr-1" />
+                                        {Icon && <Icon className="h-3 w-3 mr-1" />}
                                         {tag}
                                       </Badge>
                                     );

@@ -1,0 +1,21 @@
+[project]
+name = "web-bie"
+version = "0.1.0"
+description = "LangGraph chatbot that drives Lightpanda to visit websites, enter text, and return results."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "langgraph>=0.2.0",
+  "playwright>=1.54.0",
+  "pydantic>=2.8.0",
+  "httpx>=0.27.0"
+]
+
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

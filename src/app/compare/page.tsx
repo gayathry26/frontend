@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Briefcase, Plus, X, TrendingUp, Award, DollarSign, Users, Code } from 'lucide-react';
+import { ArrowLeft, Briefcase, Plus, X, Award, DollarSign, Users, Code, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,19 +26,30 @@ function CompareView() {
   const [availableRoles, setAvailableRoles] = useState<ITRole[]>(itRoles);
 
   useEffect(() => {
+    fetch('/api/roles', { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.roles && Array.isArray(data.roles) && data.roles.length > 0) {
+          setAvailableRoles(data.roles);
+        }
+      })
+      .catch(err => console.error('Error fetching live roles for compare page:', err));
+  }, []);
+
+  useEffect(() => {
     const rolesParam = searchParams.get('roles');
     if (rolesParam) {
       const roleIds = rolesParam.split(',');
       const roles = roleIds
-        .map(id => getRoleById(id))
+        .map(id => availableRoles.find(r => r.id === id) || getRoleById(id))
         .filter((role): role is ITRole => role !== undefined);
       setSelectedRoles(roles);
     }
-  }, [searchParams]);
+  }, [searchParams, availableRoles]);
 
   const addRole = (roleId: string) => {
     if (selectedRoles.length >= 4) return; // Max 4 roles for comparison
-    const role = getRoleById(roleId);
+    const role = availableRoles.find(r => r.id === roleId) || getRoleById(roleId);
     if (role && !selectedRoles.find(r => r.id === roleId)) {
       setSelectedRoles([...selectedRoles, role]);
     }
@@ -58,6 +69,23 @@ function CompareView() {
               <Briefcase className="h-6 w-6 text-primary" />
               <span className="text-xl font-bold">IT Career Hub</span>
             </Link>
+            <nav className="flex items-center gap-3">
+              <Link href="/dashboard">
+                <Button variant="outline">My Dashboard</Button>
+              </Link>
+              <Link href="/opportunities">
+                <Button variant="default" className="bg-blue-600 hover:bg-blue-700 text-white font-medium">Opportunities</Button>
+              </Link>
+              <Link href="/compare">
+                <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium">Compare Roles</Button>
+              </Link>
+              <Link href="/companies">
+                <Button variant="outline">Companies</Button>
+              </Link>
+              <Link href="/admin/data-management">
+                <Button variant="outline">Admin</Button>
+              </Link>
+            </nav>
           </div>
         </div>
       </header>
@@ -114,7 +142,7 @@ function CompareView() {
         {selectedRoles.length === 0 ? (
           <Card className="p-12">
             <div className="text-center text-muted-foreground">
-              <TrendingUp className="h-16 w-16 mx-auto mb-4 opacity-50" />
+              <Briefcase className="h-16 w-16 mx-auto mb-4 opacity-50 text-primary" />
               <h3 className="text-xl font-semibold mb-2">No Roles Selected</h3>
               <p>Add roles from the dropdown above to start comparing</p>
             </div>
@@ -235,28 +263,27 @@ function CompareView() {
 
                 <Separator />
 
-                {/* Career Progression */}
+                {/* Tools & Technologies */}
                 <div>
                   <h3 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4" />
-                    Career Progression
+                    <Wrench className="h-4 w-4 text-indigo-500" />
+                    Tools & Technologies
                   </h3>
                   <div className={`grid grid-cols-1 ${selectedRoles.length === 1 ? 'md:grid-cols-1' : selectedRoles.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-' + selectedRoles.length} gap-4`}>
                     {selectedRoles.map(role => (
-                      <div key={role.id} className="p-4 rounded-lg bg-muted/50 space-y-3">
+                      <div key={role.id} className="p-4 rounded-lg bg-muted/50 space-y-2">
                         <p className="font-medium text-sm mb-2">{role.title}</p>
-                        {role.careerLadder.map((level, idx) => (
-                          <div key={idx} className="text-xs space-y-1">
-                            <div className="flex justify-between items-start">
-                              <span className="font-medium">{level.title}</span>
-                              <Badge variant="outline" className="text-xs text-green-600">
-                                {level.salaryRange}
+                        <div className="flex flex-wrap gap-1.5">
+                          {role.tools && role.tools.length > 0 ? (
+                            role.tools.map((tool, idx) => (
+                              <Badge key={idx} variant="secondary" className="text-xs bg-indigo-500/10 text-indigo-700 dark:text-indigo-400">
+                                {tool}
                               </Badge>
-                            </div>
-                            <p className="text-muted-foreground">{level.yearsOfExperience}</p>
-                            {idx < role.careerLadder.length - 1 && <Separator className="mt-2" />}
-                          </div>
-                        ))}
+                            ))
+                          ) : (
+                            <p className="text-xs text-muted-foreground italic">No tools listed yet.</p>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -264,17 +291,96 @@ function CompareView() {
 
                 <Separator />
 
-                {/* Job Market */}
+                {/* Projects to Build */}
                 <div>
                   <h3 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                    <DollarSign className="h-4 w-4" />
-                    Job Market Outlook (5 Years)
+                    <Code className="h-4 w-4 text-primary" />
+                    Projects to Build
                   </h3>
                   <div className={`grid grid-cols-1 ${selectedRoles.length === 1 ? 'md:grid-cols-1' : selectedRoles.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-' + selectedRoles.length} gap-4`}>
                     {selectedRoles.map(role => (
-                      <div key={role.id} className="p-4 rounded-lg bg-muted/50">
+                      <div key={role.id} className="p-4 rounded-lg bg-muted/50 space-y-3">
                         <p className="font-medium text-sm mb-2">{role.title}</p>
-                        <p className="text-sm leading-relaxed text-muted-foreground">{role.jobMarketProjection}</p>
+                        <div className="space-y-2 text-xs">
+                          <div>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Beginner:</span>
+                            {role.projects?.beginner && role.projects.beginner.length > 0 ? (
+                              <ul className="mt-1 space-y-1 pl-2">
+                                {role.projects.beginner.map((p, idx) => (
+                                  <li key={idx} className="text-muted-foreground flex items-center gap-1.5">
+                                    <span className="text-emerald-500 font-bold">•</span> {p}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-muted-foreground italic mt-0.5">No projects added yet.</p>
+                            )}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-blue-600 dark:text-blue-400">Intermediate:</span>
+                            {role.projects?.intermediate && role.projects.intermediate.length > 0 ? (
+                              <ul className="mt-1 space-y-1 pl-2">
+                                {role.projects.intermediate.map((p, idx) => (
+                                  <li key={idx} className="text-muted-foreground flex items-center gap-1.5">
+                                    <span className="text-blue-500 font-bold">•</span> {p}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-muted-foreground italic mt-0.5">No projects added yet.</p>
+                            )}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-purple-600 dark:text-purple-400">Advanced:</span>
+                            {role.projects?.advanced && role.projects.advanced.length > 0 ? (
+                              <ul className="mt-1 space-y-1 pl-2">
+                                {role.projects.advanced.map((p, idx) => (
+                                  <li key={idx} className="text-muted-foreground flex items-center gap-1.5">
+                                    <span className="text-purple-500 font-bold">•</span> {p}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-muted-foreground italic mt-0.5">No projects added yet.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Recommended Certifications */}
+                <div>
+                  <h3 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                    <Award className="h-4 w-4 text-primary" />
+                    Recommended Certifications
+                  </h3>
+                  <div className={`grid grid-cols-1 ${selectedRoles.length === 1 ? 'md:grid-cols-1' : selectedRoles.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-' + selectedRoles.length} gap-4`}>
+                    {selectedRoles.map(role => (
+                      <div key={role.id} className="p-4 rounded-lg bg-muted/50 space-y-2">
+                        <p className="font-medium text-sm mb-2">{role.title}</p>
+                        {role.certifications && role.certifications.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {role.certifications.map((cert, idx) => (
+                              <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded bg-background/50">
+                                <span className="text-foreground">{cert.name}</span>
+                                <Badge 
+                                  variant={cert.type === 'FREE' ? 'secondary' : 'outline'}
+                                  className={cert.type === 'FREE' 
+                                    ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/30 text-[10px]' 
+                                    : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[10px]'}
+                                >
+                                  {cert.type}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">No certifications added yet.</p>
+                        )}
                       </div>
                     ))}
                   </div>
