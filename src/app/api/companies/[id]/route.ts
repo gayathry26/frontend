@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '../../../../../backend/config/mongodb';
-import { SEED_GEO_COMPANIES } from '../../../../../backend/scripts/seedTechMap';
+import { SEED_GEO_COMPANIES } from '@/backend/scripts/seedTechMap';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;

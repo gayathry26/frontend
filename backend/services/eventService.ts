@@ -1,7 +1,7 @@
 import { getDb, isMongoConfigured } from '../config/mongodb';
 import { EventDocument, EventCategory, EventMode, EventStatus } from '../types/event';
 import { processAndNormalizeEvent, resolveEventStatus } from './eventIngestionService';
-import { ObjectId } from 'mongodb';
+import { ObjectId, type Filter } from 'mongodb';
 
 const COLLECTION_NAME = 'events';
 
@@ -170,7 +170,7 @@ export async function approveEvent(eventId: string): Promise<boolean> {
   }
 
   const res = await db.collection<EventDocument>(COLLECTION_NAME).updateOne(
-    { _id: objId },
+    { _id: objId } as unknown as Filter<EventDocument>,
     { $set: { status: 'OPEN', updatedAt: new Date().toISOString() } }
   );
 

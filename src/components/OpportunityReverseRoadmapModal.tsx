@@ -16,7 +16,7 @@ export function OpportunityReverseRoadmapModal({ event, onClose }: ModalProps) {
   // Mock student skills set
   const [studentSkills, setStudentSkills] = useState<Set<string>>(new Set(['JavaScript', 'React', 'Git', 'Python']));
 
-  const eventSkills = event.careerRoleMatches?.[0]?.requiredSkills || ['JavaScript', 'APIs', 'Git', 'Problem Solving'];
+  const eventSkills = event.skills.length > 0 ? event.skills : ['JavaScript', 'APIs', 'Git', 'Problem Solving'];
   const known = eventSkills.filter(s => studentSkills.has(s));
   const missing = eventSkills.filter(s => !studentSkills.has(s));
 
@@ -38,7 +38,7 @@ export function OpportunityReverseRoadmapModal({ event, onClose }: ModalProps) {
             PREPARE FOR THIS OPPORTUNITY
           </Badge>
           <h3 className="text-xl font-extrabold text-foreground">{event.title}</h3>
-          <p className="text-xs text-muted-foreground">{event.organization?.name} • {event.location?.city}, {event.location?.state}</p>
+          <p className="text-xs text-muted-foreground">{event.organizer.name} • {event.location?.city}, {event.location?.state}</p>
         </div>
 
         {/* "CAN I APPLY?" SCORE GAUGE */}
@@ -97,11 +97,11 @@ export function OpportunityReverseRoadmapModal({ event, onClose }: ModalProps) {
                 Step 3: Official Registration
               </span>
               <p className="text-xs text-muted-foreground">
-                Deadline: <strong className="text-foreground">{event.dateInfo?.registrationDeadline || 'Closing Soon'}</strong>
+                Deadline: <strong className="text-foreground">{event.dates.registrationDeadline || 'Closing Soon'}</strong>
               </p>
-              {event.registrationURL ? (
+              {event.registrationUrl ? (
                 <a
-                  href={event.registrationURL}
+                  href={event.registrationUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition shadow-sm"

@@ -15,10 +15,11 @@ const eslintConfig = [
       'react/no-unescaped-entities': 'off',
       '@next/next/no-img-element': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
       'react-hooks/exhaustive-deps': 'off',
       'import/no-unresolved': 'error',
-      'import/named': 'error',
+      // The legacy import resolver cannot read type-only exports from packages
+      // that use conditional exports (for example class-variance-authority).
+      'import/named': 'off',
       'import/default': 'error',
       'import/namespace': 'error',
       'import/no-absolute-path': 'error',

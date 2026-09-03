@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getEventBySlug } from '@/backend/services/eventService';
 
-export default async function OpportunityDetailPage({ params }: { params: { slug: string } }) {
+export default async function OpportunityDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = await params;
   const event = await getEventBySlug(resolvedParams.slug);
 
