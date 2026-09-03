@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb';
+import { ObjectId, type Filter } from 'mongodb';
 import { getDb, isMongoConfigured } from '../config/mongodb';
 import { ContributionDocument, ContributorInfo, ITRole, RoleVersionDocument } from '../types/role';
 import { getRoleBySlugFromDb, upsertRoleInDb } from './roleService';
@@ -68,7 +68,7 @@ export async function approveContribution(
     return { success: false, error: 'Invalid contribution ID' };
   }
 
-  const contribution = await collection.findOne({ _id: objId });
+  const contribution = await collection.findOne({ _id: objId } as unknown as Filter<ContributionDocument>);
   if (!contribution) {
     return { success: false, error: 'Contribution not found' };
   }
@@ -104,7 +104,7 @@ export async function approveContribution(
 
   const now = new Date().toISOString();
   await collection.updateOne(
-    { _id: objId },
+    { _id: objId } as unknown as Filter<ContributionDocument>,
     {
       $set: {
         status: 'approved',
@@ -138,7 +138,7 @@ export async function rejectContribution(
 
   const now = new Date().toISOString();
   const res = await db.collection<ContributionDocument>(COLLECTION_NAME).updateOne(
-    { _id: objId },
+    { _id: objId } as unknown as Filter<ContributionDocument>,
     {
       $set: {
         status: 'rejected',

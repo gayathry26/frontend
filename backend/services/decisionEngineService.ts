@@ -106,10 +106,10 @@ export async function generateNextBestActions(profile: StudentProfile): Promise<
         id: 'action-opportunity',
         title: `Apply / Participate: ${topEvt.title}`,
         category: 'APPLY_OPPORTUNITY',
-        description: `Join this ${topEvt.category} matching ${roleTitle} in ${topEvt.location?.city || 'India'}.`,
+        description: `Join this ${topEvt.type.replace('_', ' ').toLowerCase()} matching ${roleTitle} in ${topEvt.location?.city || 'India'}.`,
         priority: 3,
-        reason: `Live opportunity matching your target career path (Deadline: ${topEvt.dateInfo?.registrationDeadline || 'Upcoming'})`,
-        actionUrl: topEvt.registrationURL || `/opportunities/${topEvt.slug}`
+        reason: `Live opportunity matching your target career path (Deadline: ${topEvt.dates.registrationDeadline || 'Upcoming'})`,
+        actionUrl: topEvt.registrationUrl || `/opportunities/${topEvt.slug}`
       });
     } else {
       const certName = role?.certifications?.[0]?.name || 'Industry Cloud Certification';

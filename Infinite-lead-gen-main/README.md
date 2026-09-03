@@ -16,7 +16,7 @@ Main workflow (UI):
 ## Install
 
 ```bash
-pip install -e .
+pip install -r requirements.txt
 playwright install chromium
 ```
 
@@ -39,7 +39,7 @@ Request body:
 {
   "what_to_scrape": "Bakery",
   "location": "Coimbatore",
-  "result_limit": 30
+  "result_limit": 50
 }
 ```
 

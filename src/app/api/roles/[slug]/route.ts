@@ -6,11 +6,12 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET(
-  req: Request,
-  { params }: { params: { slug: string } }
+  _req: Request,
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const role = await getRoleBySlugFromDb(params.slug);
+    const { slug } = await params;
+    const role = await getRoleBySlugFromDb(slug);
     if (!role) {
       return NextResponse.json({ error: 'Role not found' }, { status: 404 });
     }
@@ -22,11 +23,12 @@ export async function GET(
 
 export async function PUT(
   req: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const { slug } = await params;
     const body = await req.json();
-    const validated = ITRoleSchema.parse({ ...body, id: params.slug });
+    const validated = ITRoleSchema.parse({ ...body, id: slug });
 
     const role = await upsertRoleInDb(validated);
     return NextResponse.json({ success: true, role });
@@ -36,11 +38,12 @@ export async function PUT(
 }
 
 export async function DELETE(
-  req: Request,
-  { params }: { params: { slug: string } }
+  _req: Request,
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const deleted = await deleteRoleInDb(params.slug);
+    const { slug } = await params;
+    const deleted = await deleteRoleInDb(slug);
     if (!deleted) {
       return NextResponse.json({ error: 'Role not found or already deleted' }, { status: 404 });
     }

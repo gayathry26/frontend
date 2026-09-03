@@ -3,14 +3,15 @@ import { approveContribution } from '@/services/contributionService';
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await req.json().catch(() => ({}));
     const reviewerName = body.reviewerName || 'Admin';
     const adminNotes = body.adminNotes;
 
-    const result = await approveContribution(params.id, reviewerName, adminNotes);
+    const result = await approveContribution(id, reviewerName, adminNotes);
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });

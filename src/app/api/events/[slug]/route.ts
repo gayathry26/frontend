@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { getEventBySlug } from '@/backend/services/eventService';
 
 export async function GET(
-  req: Request,
-  { params }: { params: { slug: string } }
+  _req: Request,
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     const resolvedParams = await params;
