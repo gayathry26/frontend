@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 export interface DiscoveredCompany {
   id: string;
   name: string;
@@ -42,7 +45,7 @@ export interface GetDiscoveredCompaniesOptions {
 }
 
 export const CURATED_IT_COMPANIES: DiscoveredCompany[] = [
-  // ==================== CHENNAI HUBS (10) ====================
+  // ==================== CHENNAI HUBS (8) ====================
   {
     id: 'zoho-chennai',
     name: 'Zoho Corporation Private Limited',
@@ -244,7 +247,7 @@ export const CURATED_IT_COMPANIES: DiscoveredCompany[] = [
     relatedRoles: ['software-engineer', 'frontend-developer', 'ui-ux-designer']
   },
 
-  // ==================== BENGALURU HUBS (10) ====================
+  // ==================== BENGALURU HUBS (8) ====================
   {
     id: 'google-bengaluru',
     name: 'Google India Private Limited',
@@ -446,7 +449,7 @@ export const CURATED_IT_COMPANIES: DiscoveredCompany[] = [
     relatedRoles: ['software-engineer', 'mobile-app-developer', 'data-scientist']
   },
 
-  // ==================== COIMBATORE HUBS (5) ====================
+  // ==================== COIMBATORE HUBS (3) ====================
   {
     id: 'bosch-coimbatore',
     name: 'Bosch Global Software Technologies',
@@ -523,7 +526,7 @@ export const CURATED_IT_COMPANIES: DiscoveredCompany[] = [
     relatedRoles: ['software-engineer', 'backend-developer', 'cloud-architect']
   },
 
-  // ==================== HYDERABAD HUBS (4) ====================
+  // ==================== HYDERABAD HUBS (2) ====================
   {
     id: 'microsoft-hyderabad',
     name: 'Microsoft India Development Center',
@@ -575,7 +578,7 @@ export const CURATED_IT_COMPANIES: DiscoveredCompany[] = [
     relatedRoles: ['software-engineer', 'cloud-architect', 'data-scientist']
   },
 
-  // ==================== MUMBAI & PUNE HUBS (4) ====================
+  // ==================== MUMBAI & PUNE HUBS (2) ====================
   {
     id: 'tcs-mumbai',
     name: 'Tata Consultancy Services Limited',
@@ -627,7 +630,7 @@ export const CURATED_IT_COMPANIES: DiscoveredCompany[] = [
     relatedRoles: ['cyber-security-analyst', 'devops-engineer', 'backend-developer']
   },
 
-  // ==================== NOIDA / GURGAON / NCR (3) ====================
+  // ==================== NOIDA / GURGAON / NCR (2) ====================
   {
     id: 'paytm-noida',
     name: 'Paytm (One97 Communications)',
@@ -680,6 +683,22 @@ export const CURATED_IT_COMPANIES: DiscoveredCompany[] = [
   }
 ];
 
+function getBaseCompanies(): DiscoveredCompany[] {
+  try {
+    const jsonPath = path.join(process.cwd(), 'src', 'data', 'companies.json');
+    if (fs.existsSync(jsonPath)) {
+      const data = fs.readFileSync(jsonPath, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Fallback to CURATED_IT_COMPANIES:', err);
+  }
+  return CURATED_IT_COMPANIES;
+}
+
 export async function getDiscoveredCompanies(options: GetDiscoveredCompaniesOptions = {}): Promise<{
   success: boolean;
   total: number;
@@ -691,20 +710,20 @@ export async function getDiscoveredCompanies(options: GetDiscoveredCompaniesOpti
   const page = Math.max(1, options.page || 1);
   const limit = Math.max(1, Math.min(100, options.limit || 50));
 
-  let filtered = [...CURATED_IT_COMPANIES];
+  let filtered = [...getBaseCompanies()];
 
   if (options.city && options.city.toLowerCase() !== 'all') {
-    filtered = filtered.filter(c => c.address.city.toLowerCase() === options.city!.toLowerCase());
+    filtered = filtered.filter(c => c.address?.city?.toLowerCase() === options.city!.toLowerCase());
   }
 
   if (options.type && options.type.toLowerCase() !== 'all') {
-    filtered = filtered.filter(c => c.type.toLowerCase() === options.type!.toLowerCase());
+    filtered = filtered.filter(c => c.type?.toLowerCase() === options.type!.toLowerCase());
   }
 
   if (options.category && options.category.toLowerCase() !== 'all') {
     filtered = filtered.filter(c =>
-      c.categories.some(cat => cat.toLowerCase().includes(options.category!.toLowerCase())) ||
-      c.industries.some(ind => ind.toLowerCase().includes(options.category!.toLowerCase()))
+      c.categories?.some(cat => cat.toLowerCase().includes(options.category!.toLowerCase())) ||
+      c.industries?.some(ind => ind.toLowerCase().includes(options.category!.toLowerCase()))
     );
   }
 
@@ -719,11 +738,11 @@ export async function getDiscoveredCompanies(options: GetDiscoveredCompaniesOpti
   if (options.search && options.search.trim()) {
     const s = options.search.trim().toLowerCase();
     filtered = filtered.filter(c =>
-      c.name.toLowerCase().includes(s) ||
-      c.address.full.toLowerCase().includes(s) ||
-      c.address.area?.toLowerCase().includes(s) ||
+      c.name?.toLowerCase().includes(s) ||
+      c.address?.full?.toLowerCase().includes(s) ||
+      c.address?.area?.toLowerCase().includes(s) ||
       c.description?.toLowerCase().includes(s) ||
-      c.technologies.some(t => t.toLowerCase().includes(s))
+      c.technologies?.some(t => t.toLowerCase().includes(s))
     );
   }
 
@@ -752,9 +771,9 @@ export async function getHubStats(city?: string): Promise<{
 }> {
   const targetCity = (city || 'India').trim();
 
-  let filtered = [...CURATED_IT_COMPANIES];
+  let filtered = [...getBaseCompanies()];
   if (city && city.toLowerCase() !== 'all' && city.toLowerCase() !== 'india') {
-    filtered = filtered.filter(c => c.address.city.toLowerCase() === city.toLowerCase());
+    filtered = filtered.filter(c => c.address?.city?.toLowerCase() === city.toLowerCase());
   }
 
   const totalCompanies = filtered.length;

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-// Force read .env.local for MONGODB_URI when run from standalone CLI
+// Pre-load environment variables from .env.local
 const envLocalPath = path.resolve(process.cwd(), '.env.local');
 if (fs.existsSync(envLocalPath)) {
   const envContent = fs.readFileSync(envLocalPath, 'utf-8');
@@ -15,13 +15,6 @@ if (fs.existsSync(envLocalPath)) {
       }
     }
   }
-}
-
-if (!process.env.MONGODB_URI) {
-  process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017';
-}
-if (!process.env.MONGODB_DB) {
-  process.env.MONGODB_DB = 'it_career_hub';
 }
 
 import { runGoogleMapsSearch } from './mapsScrapeService';
@@ -41,23 +34,114 @@ const TARGET_LOCATIONS = [
 
 const SEARCH_QUERIES = [
   'IT Software Company',
-  'SaaS Product Company'
+  'SaaS Product Company',
+  'Web Development Agency',
+  'AI Startup',
+  'Cloud Consulting Company'
 ];
 
-async function run() {
-  const db = await getDb();
-  const collection = db.collection<DiscoveredCompany>('companies');
+// Noise categories from Google Maps to discard
+const IGNORED_CATEGORIES = [
+  'repair',
+  'computer repair',
+  'used computer store',
+  'computer store',
+  'electronics store',
+  'coaching',
+  'tuition',
+  'training institute',
+  'vocational school'
+];
 
-  const allDiscovered: DiscoveredCompany[] = [...CURATED_IT_COMPANIES];
+// Helper: Infer company type accurately
+function inferCompanyType(name: string, category: string, query: string): DiscoveredCompany['type'] {
+  const text = `${name} ${category} ${query}`.toLowerCase();
+  if (text.includes('saas') || text.includes('product') || text.includes('platform')) return 'SaaS';
+  if (text.includes('startup') || text.includes('ai') || text.includes('labs')) return 'Startup';
+  if (text.includes('fintech') || text.includes('pay') || text.includes('bank')) return 'FinTech';
+  if (text.includes('consult') || text.includes('service') || text.includes('agency') || text.includes('solutions')) return 'Service';
+  return 'Product';
+}
+
+// Helper: Infer technologies based on query and name
+function inferTechnologies(name: string, query: string): string[] {
+  const text = `${name} ${query}`.toLowerCase();
+  const stack = new Set<string>(['Web', 'Software']);
+
+  if (text.includes('ai') || text.includes('ml') || text.includes('data')) {
+    stack.add('Python');
+    stack.add('Machine Learning');
+  }
+  if (text.includes('cloud') || text.includes('consulting')) {
+    stack.add('AWS');
+    stack.add('Cloud Infra');
+  }
+  if (text.includes('web') || text.includes('agency')) {
+    stack.add('React');
+    stack.add('Node.js');
+  }
+  if (text.includes('saas')) {
+    stack.add('Cloud');
+    stack.add('PostgreSQL');
+  }
+
+  return Array.from(stack);
+}
+
+// Helper: Infer relevant roles
+function inferRelatedRoles(type: string, query: string): string[] {
+  const q = query.toLowerCase();
+  const roles = new Set<string>(['software-engineer', 'frontend-developer', 'backend-developer']);
+
+  if (q.includes('ai')) {
+    roles.add('ai-engineer');
+    roles.add('data-scientist');
+  }
+  if (q.includes('cloud')) {
+    roles.add('cloud-architect');
+    roles.add('devops-engineer');
+  }
+  if (type === 'Product' || type === 'SaaS') {
+    roles.add('product-manager');
+    roles.add('ui-ux-designer');
+  }
+
+  return Array.from(roles);
+}
+
+async function run() {
+  let dbCollection: any = null;
+
+  try {
+    const db = await getDb();
+    dbCollection = db.collection('companies');
+    console.log('✓ Connected to MongoDB. Saving records live to database.');
+  } catch (err: any) {
+    console.warn('⚠️ MongoDB is not active (ECONNREFUSED). Falling back to src/data/companies.json.');
+  }
+
+  // Load existing file backup if present to avoid overwriting previously scraped companies
+  let existingCompanies: DiscoveredCompany[] = [...CURATED_IT_COMPANIES];
+  const outDir = path.join(process.cwd(), 'src', 'data');
+  const outPath = path.join(outDir, 'companies.json');
+
+  if (fs.existsSync(outPath)) {
+    try {
+      const existingData = JSON.parse(fs.readFileSync(outPath, 'utf-8'));
+      if (Array.isArray(existingData) && existingData.length > 0) {
+        existingCompanies = existingData;
+      }
+    } catch {}
+  }
+
+  const allDiscovered: DiscoveredCompany[] = [...existingCompanies];
   const seenIds = new Set(allDiscovered.map(c => c.id));
 
-  // Seed curated companies first
-  for (const curated of CURATED_IT_COMPANIES) {
-    await collection.updateOne(
-      { id: curated.id },
-      { $set: curated },
-      { upsert: true }
-    );
+  // Seed initial curated if DB is available
+  if (dbCollection) {
+    for (const curated of CURATED_IT_COMPANIES) {
+      await dbCollection.updateOne({ id: curated.id }, { $set: curated }, { upsert: true }).catch(() => null);
+    }
   }
 
   for (const location of TARGET_LOCATIONS) {
@@ -72,8 +156,8 @@ async function run() {
         const scrapeResult = await runGoogleMapsSearch({
           query,
           location,
-          max_results: 15,
-          timeout_ms: 30000
+          max_results: 50,
+          timeout_ms: 60000 // 60s to allow scrolling for 50 records
         });
 
         console.log(`Found ${scrapeResult.count} places from Google Maps.`);
@@ -81,19 +165,27 @@ async function run() {
         for (const place of scrapeResult.results) {
           if (!place.name) continue;
 
+          // Filter out repair centers, retail stores, and computer hardware shops
+          const cat = (place.category || '').toLowerCase();
+          if (IGNORED_CATEGORIES.some(bad => cat.includes(bad))) {
+            continue;
+          }
+
           const cleanId = place.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + `-${location.toLowerCase()}`;
           if (seenIds.has(cleanId)) continue;
+
+          const inferredType = inferCompanyType(place.name, place.category || '', query);
+          const inferredTech = inferTechnologies(place.name, query);
+          const inferredRoles = inferRelatedRoles(inferredType, query);
 
           const formattedCompany: DiscoveredCompany = {
             id: cleanId,
             name: place.name,
-            type: (place.category?.toLowerCase().includes('consult') || place.category?.toLowerCase().includes('service')) 
-              ? 'Service' 
-              : 'Product',
+            type: inferredType,
             categories: [place.category || 'Information Technology'],
             industries: ['Software', 'IT Services'],
-            technologies: ['Web', 'Cloud', 'Software'],
-            description: place.snippet || `${place.name} is an IT and software enterprise located in ${location}.`,
+            technologies: inferredTech,
+            description: place.snippet || `${place.name} is an IT enterprise located in ${location}.`,
             website: place.website || undefined,
             phone: place.phone || undefined,
             address: {
@@ -108,19 +200,21 @@ async function run() {
               lng: place.longitude || 0
             },
             hiring: true,
-            startup: false,
-            relatedRoles: ['software-engineer', 'frontend-developer', 'backend-developer']
+            startup: inferredType === 'Startup',
+            relatedRoles: inferredRoles
           };
 
-          await collection.updateOne(
-            { id: formattedCompany.id },
-            { $set: formattedCompany },
-            { upsert: true }
-          );
+          if (dbCollection) {
+            await dbCollection.updateOne(
+              { id: formattedCompany.id },
+              { $set: formattedCompany },
+              { upsert: true }
+            ).catch(() => null);
+          }
 
           allDiscovered.push(formattedCompany);
           seenIds.add(cleanId);
-          console.log(`✓ Saved to DB: ${formattedCompany.name}`);
+          console.log(`✓ Added: ${formattedCompany.name}`);
         }
       } catch (err: any) {
         console.error(`Error scraping "${query}" in ${location}:`, err.message);
@@ -128,16 +222,15 @@ async function run() {
     }
   }
 
-  const outDir = path.join(process.cwd(), 'src', 'data');
+  // File write
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
   }
 
-  const outPath = path.join(outDir, 'companies.json');
   fs.writeFileSync(outPath, JSON.stringify(allDiscovered, null, 2), 'utf-8');
 
   console.log(`\n========================================`);
-  console.log(`Done! Scraped companies are saved to DB and ${outPath}`);
+  console.log(`Done! Saved ${allDiscovered.length} total companies to ${outPath}`);
   console.log(`========================================\n`);
 
   process.exit(0);
