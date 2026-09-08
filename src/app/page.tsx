@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { itRoles, categories, type Tag, type ITRole } from '@/data/itRoles';
+import { TopHackathons } from '@/components/TopHackathons';
 
 const tagIcons: Record<Tag, any> = {
   'Coding': Code,
@@ -99,6 +100,12 @@ export default function Home() {
               </Link>
               <Link href="/opportunities">
                 <Button variant="default" className="bg-blue-600 hover:bg-blue-700 text-white font-medium">Opportunities</Button>
+              </Link>
+              <Link href="/project-interview">
+                <Button variant="outline">Project Interview</Button>
+              </Link>
+              <Link href="/role-analyzer">
+                <Button variant="default" className="bg-purple-600 hover:bg-purple-700 text-white font-medium">Role Analyzer</Button>
               </Link>
               <Link href="/compare">
                 <Button variant="outline">Compare Roles</Button>
@@ -282,6 +289,9 @@ export default function Home() {
 
       </section>
 
+
+      {/* Top Hackathons Section */}
+      <TopHackathons />
 
       {/* Footer */}
       <footer className="border-t py-12 bg-muted/30">

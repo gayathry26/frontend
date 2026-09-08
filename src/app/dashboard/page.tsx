@@ -80,6 +80,12 @@ export default function StudentDashboardPage() {
             <Link href="/opportunities">
               <Button variant="outline" size="sm">Opportunities</Button>
             </Link>
+            <Link href="/project-interview">
+              <Button variant="outline" size="sm">Project Interview</Button>
+            </Link>
+            <Link href="/role-analyzer">
+              <Button variant="default" size="sm" className="bg-purple-600 hover:bg-purple-700 text-white font-medium">Role Analyzer</Button>
+            </Link>
             <Link href="/compare">
               <Button variant="outline" size="sm">Compare Roles</Button>
             </Link>

@@ -338,7 +338,7 @@ export default function CompaniesPage() {
           {liveError && liveMode && (
             <div className="mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
               Live scrape note: {liveError} <br />
-              <span className="text-[11px] text-amber-700">Hint: Run <code>npx playwright install chromium</code> or set <code>PYTHON_SCRAPER_URL=http://127.0.0.1:8000</code> (Infinite-lead-gen-main) for sidecar mode.</span>
+              <span className="text-[11px] text-amber-700">Hint: Run <code>npx playwright install chromium</code> or configure a Python scraper sidecar.</span>
             </div>
           )}
         </div>

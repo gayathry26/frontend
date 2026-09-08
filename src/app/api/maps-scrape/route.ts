@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     }
     const { what_to_scrape, location, result_limit } = parsed.data;
 
-    // 1) Try Python microservice if configured (keeps Infinite-lead-gen-main as sidecar)
+    // 1) Try Python microservice if configured
     const pyResult = await tryPythonFallback({ what_to_scrape, location, result_limit });
     if (pyResult && Array.isArray(pyResult.results) && pyResult.results.length > 0) {
       return NextResponse.json({
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
           {
             success: false,
             error: msg,
-            hint: 'Playwright browser not installed. Run: npx playwright install chromium  OR set PYTHON_SCRAPER_URL=http://127.0.0.1:8000 to proxy to Infinite-lead-gen-main FastAPI.',
+            hint: 'Playwright browser not installed. Run: npx playwright install chromium or set PYTHON_SCRAPER_URL to proxy to sidecar FastAPI.',
             data: {
               task: 'maps_search',
               query: what_to_scrape,

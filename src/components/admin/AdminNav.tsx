@@ -26,6 +26,14 @@ export function AdminNav() {
                 Opportunities
               </Button>
             </Link>
+            <Link href="/project-interview">
+              <Button variant="outline">Project Interview</Button>
+            </Link>
+            <Link href="/role-analyzer">
+              <Button variant="default" className="bg-purple-600 hover:bg-purple-700 text-white font-medium">
+                Role Analyzer
+              </Button>
+            </Link>
             <Link href="/compare">
               <Button variant="outline">Compare Roles</Button>
             </Link>

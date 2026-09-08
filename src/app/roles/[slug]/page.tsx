@@ -31,11 +31,12 @@ export default async function RolePage({ params }: { params: Promise<{ slug: str
   }
 
   const allCompanies = await getAllCompaniesFromDb();
-  let relevantCompanies = allCompanies.filter(c => 
-    c.relatedRoles.includes(role.id) ||
-    c.domains.some(d => d.toLowerCase() === role.category.toLowerCase()) ||
-    c.technologies.some(t => role.technicalSkills.some(s => s.toLowerCase().includes(t.toLowerCase())))
-  );
+  let relevantCompanies = allCompanies.filter(c => {
+    const hasRole = Array.isArray(c.relatedRoles) && c.relatedRoles.includes(role.id);
+    const hasDomain = Array.isArray(c.domains) && Boolean(role.category) && c.domains.some(d => typeof d === 'string' && d.toLowerCase() === role.category.toLowerCase());
+    const hasTech = Array.isArray(c.technologies) && Array.isArray(role.technicalSkills) && c.technologies.some(t => typeof t === 'string' && role.technicalSkills.some(s => typeof s === 'string' && s.toLowerCase().includes(t.toLowerCase())));
+    return hasRole || hasDomain || hasTech;
+  });
 
   if (relevantCompanies.length === 0) {
     relevantCompanies = allCompanies.slice(0, 6);
