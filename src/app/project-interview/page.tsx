@@ -3,340 +3,361 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
-  Upload, FileText, Sparkles, CheckCircle2, AlertTriangle, ArrowRight,
+  Github, Sparkles, CheckCircle2, AlertTriangle, ArrowRight,
   ShieldCheck, HelpCircle, Bot, User, RotateCcw, ChevronRight, BarChart2,
   Cpu, Layers, Target, Clock, ArrowLeft, RefreshCw, Zap, Check, Eye,
   AlertCircle, TrendingUp, Award, Volume2, Mic, MicOff, Send, Database,
-  FileCode, Search, Server, Shield, Network, FolderGit2, BookOpen
+  FileCode, Search, Server, Shield, Network, FolderGit2, BookOpen,
+  Code2, Terminal, Play, Lock, ChevronDown, ChevronUp, Copy, ExternalLink,
+  Flame, CheckCircle, Info, Lightbulb
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { toast } from "sonner";
 
-interface StructuredProjectOverview {
-  project_name: string;
-  one_line_summary: string;
-  overview: string;
-  tech_stack: {
-    frontend?: string[];
-    backend?: string[];
-    database?: string[];
-    ai_ml?: string[];
-    deployment_infra?: string[];
-    other_tools?: string[];
+interface DetectedStack {
+  languages: string[];
+  frontendFrameworks: string[];
+  backendFrameworks: string[];
+  databases: string[];
+  ormOrQueryBuilders: string[];
+  authentication: string[];
+  apiTechnologies: string[];
+  stateManagement: string[];
+  cloudAndDevOps: string[];
+  testingFrameworks: string[];
+  buildToolsAndPackageManagers: string[];
+  primaryStackLabel: string;
+}
+
+interface ProjectKnowledge {
+  project: string;
+  owner: string;
+  url: string;
+  description: string;
+  technologies: string[];
+  techStackDetailed: DetectedStack;
+  features: string[];
+  architecture: {
+    pattern: string;
+    flowDiagram: string[];
+    componentLayers: {
+      presentation: string[];
+      routing: string[];
+      businessLogic: string[];
+      dataAccess: string[];
+    };
+    scalabilityBottlenecks: string[];
+    securityHighlights: string[];
   };
-  apis_and_keys_used?: Array<{ name: string; purpose: string }>;
-  architecture_highlights?: string[];
-  notable_features?: string[];
-  potential_interview_focus_areas?: string[];
+  authentication: string;
+  apis: Array<{ method: string; path: string; filePath: string; handlerName: string; hasAuthGuard: boolean }>;
+  databaseModels: Array<{ name: string; type: string; filePath: string; fields: string[]; relations: string[] }>;
+  codeDefenseSnippets: Array<{
+    id: string;
+    filePath: string;
+    name: string;
+    type: string;
+    startLine: number;
+    endLine: number;
+    codeSnippet: string;
+    language: string;
+    purpose: string;
+  }>;
+  importantFiles: Array<{ path: string; category: string; description: string }>;
+  dependencies: string[];
+  relationships: Array<{ from: string; to: string; description: string }>;
+  totalFilesCount: number;
 }
 
-interface ProjectProfile {
-  name: string;
-  projectType: string;
-  techStack: string[];
-  architecture: string;
-  architectureFlow: string[];
-  keyFeatures: string[];
-  aiIdentifiedContributions: string[];
-  notSpecifiedFields: string[];
-  structuredOverview?: StructuredProjectOverview;
-}
-
-interface ProjectClaim {
+interface GeneratedQuestion {
   id: string;
-  claim: string;
-  category: string;
-  sourceSection?: string;
-}
-
-interface KnowledgeNode {
-  id: string;
-  label: string;
-  category: 'FRONTEND' | 'BACKEND' | 'DATABASE' | 'AUTHENTICATION' | 'API' | 'SECURITY' | 'ARCHITECTURE' | 'SCALABILITY' | 'DEPLOYMENT';
-  section: string;
-  snippet: string;
-}
-
-interface AnswerEvaluation {
-  score: number;
-  technicalCorrectness: number;
-  projectRelevance: number;
-  depth: number;
-  missingConcepts: string[];
-  strengths: string[];
-  weaknesses: string[];
-  feedback: string;
-  consistencyAlert?: string;
-  claimPreparationAlert?: string;
-  betterAnswerExample?: string;
-}
-
-interface RAGInterviewQuestion {
-  id: string;
+  questionNumber: number;
   question: string;
   category: string;
-  difficulty: number;
-  retrievedChunks: string[];
-  sourceSections: string[];
-  reason: string;
-  isClaimDefense?: boolean;
-  studentAnswer?: string;
-  evaluation?: AnswerEvaluation;
+  difficultyLevel: 1 | 2 | 3 | 4;
+  difficultyLabel: 'Basic' | 'Intermediate' | 'Advanced' | 'Project Defense';
+  evidenceFiles: string[];
+  reasonWhyAsked: string;
+  codeSnippet?: {
+    filePath: string;
+    language: string;
+    startLine: number;
+    endLine: number;
+    code: string;
+  };
+  expectedKeyPoints: string[];
 }
 
-interface RAGInterviewSession {
+interface DetailedAnswerEvaluation {
+  overallScore: number;
+  technicalCorrectness: number;
+  projectUnderstanding: number;
+  implementationUnderstanding: number;
+  reasoning: number;
+  codeMatch: number;
+  strengths: string[];
+  weaknesses: string[];
+  missingConcepts: string[];
+  feedback: string;
+  isShallow: boolean;
+  needsFollowUp: boolean;
+  followUpQuestion?: string;
+  contradictionAlert?: {
+    hasContradiction: boolean;
+    topic: string;
+    candidateClaim: string;
+    actualRepositoryFact: string;
+    politeInquiry: string;
+  };
+}
+
+interface InterviewSession {
   sessionId: string;
   projectId: string;
   projectName: string;
-  readmeContent: string;
-  mode: string;
-  profile: ProjectProfile;
-  claims: ProjectClaim[];
-  questions: RAGInterviewQuestion[];
+  repoUrl: string;
+  mode: 'QUICK' | 'STANDARD' | 'DEEP_TECHNICAL';
+  maxQuestions: number;
   currentQuestionIndex: number;
-  status: 'in_progress' | 'completed';
-  knowledgeMap: Record<string, 'Strong' | 'Medium' | 'Weak'>;
-  contradictions: string[];
-  weakAreas: string[];
-  strongAreas: string[];
-  overallScore?: number;
-  defenseReadiness?: number;
-  categoryScores?: Record<string, number>;
-  personalizedPlan?: {
-    priority: number;
-    topic: string;
-    whyPrepare: string;
-    whatToLearn: string;
-    practiceQuestions: string[];
-  }[];
-  createdAt: string;
+  currentDifficulty: 1 | 2 | 3 | 4;
+  records: Array<{
+    question: GeneratedQuestion;
+    candidateAnswer?: string;
+    evaluation?: DetailedAnswerEvaluation;
+    isFollowUp?: boolean;
+  }>;
+  status: 'IN_PROGRESS' | 'COMPLETED';
+  contradictionsDetected: string[];
 }
 
-const RAG_PIPELINE_STEPS = [
-  "README.md Document Detected",
-  "Markdown Parser Extracting Sections",
-  "Document Cleaner Sanitizing Text",
-  "Section Extraction & Hierarchy Map",
-  "Semantic Section-Based Chunking",
-  "Generating Vector Embeddings",
-  "Indexing into Vector Store",
-  "Project Knowledge Base Ready",
+interface FinalReport {
+  sessionId: string;
+  projectName: string;
+  repoUrl: string;
+  overallScore: number;
+  ownershipConfidence: {
+    level: 'HIGH' | 'MEDIUM' | 'LOW';
+    confidenceScore: number;
+    rationale: string;
+    contributionsVerified: string[];
+    riskFactors: string[];
+  };
+  knowledgeDimensions: Array<{
+    category: string;
+    percentage: number;
+    rating: 'Strong' | 'Proficient' | 'Developing' | 'Needs Focus';
+  }>;
+  strongAreas: string[];
+  weakAreas: string[];
+  totalQuestions: number;
+  answeredConfidently: number;
+  requiredFollowUp: number;
+  contradictionsDetected: string[];
+  recommendedLearning: Array<{
+    priority: number;
+    topic: string;
+    category: string;
+    whyPrepare: string;
+    studyGuide: string;
+    practiceQuestions: string[];
+  }>;
+  generatedAt: string;
+}
+
+const ANALYSIS_PIPELINE_STEPS = [
+  "Validating GitHub Repository URL & Structure",
+  "Fetching Git Tree, Manifests & Source Code",
+  "Sanitizing Sensitive Credentials & Keys",
+  "Technology Detection (Languages, Frameworks, DB)",
+  "Architecture Analysis & Request Pipeline Mapping",
+  "Extracting APIs, Database Models & Code Defense Snippets",
+  "Indexing Code Chunks & Assembling Knowledge Graph",
+  "Project Knowledge Representation Ready",
 ];
 
 export default function ProjectInterviewPage() {
-  const [activeTab, setActiveTab] = useState<string>("prep");
+  // Workflow Phase: 'input' | 'analyzing' | 'overview' | 'interview' | 'report'
+  const [phase, setPhase] = useState<'input' | 'analyzing' | 'overview' | 'interview' | 'report'>('input');
 
-  // RAG Workflow Steps: 'input' | 'ingesting' | 'ready' | 'mode_select' | 'interview' | 'report'
-  const [workflowStep, setWorkflowStep] = useState<'input' | 'ingesting' | 'ready' | 'mode_select' | 'interview' | 'report'>('input');
-
-  // Input state
-  const [readmeText, setReadmeText] = useState<string>('');
-  const [fileName, setFileName] = useState<string>('');
-  const [pasteMode, setPasteMode] = useState<boolean>(false);
+  // Input States
+  const [repoUrl, setRepoUrl] = useState<string>('');
   const [inputError, setInputError] = useState<string>('');
+  const [sampleRepos, setSampleRepos] = useState<any[]>([]);
 
-  // Default README detection state
-  const [defaultReadmeFound, setDefaultReadmeFound] = useState<boolean>(false);
-  const [defaultReadmePath, setDefaultReadmePath] = useState<string>('');
-  const [loadingDefault, setLoadingDefault] = useState<boolean>(false);
+  // Pipeline Stepper
+  const [pipelineStep, setPipelineStep] = useState<number>(0);
 
-  // RAG Ingestion Pipeline State
-  const [pipelineIdx, setPipelineIdx] = useState<number>(0);
+  // Analyzed Repository & Project Knowledge
   const [projectId, setProjectId] = useState<string>('');
-  const [profile, setProfile] = useState<ProjectProfile | null>(null);
-  const [claims, setClaims] = useState<ProjectClaim[]>([]);
-  const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
-  const [chunksCount, setChunksCount] = useState<number>(0);
-  const [topicsCount, setTopicsCount] = useState<number>(0);
+  const [projectKnowledge, setProjectKnowledge] = useState<ProjectKnowledge | null>(null);
 
-  // Selected Node for Knowledge Map exploration
-  const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(null);
+  // Interview Mode: QUICK (10 Qs), STANDARD (20 Qs), DEEP_TECHNICAL
+  const [interviewMode, setInterviewMode] = useState<'QUICK' | 'STANDARD' | 'DEEP_TECHNICAL'>('QUICK');
 
-  // Interview Session State
-  const [selectedMode, setSelectedMode] = useState<'QUICK' | 'FULL' | 'DEEP_TECHNICAL' | 'PROJECT_DEFENSE' | 'WEAKNESS_PRACTICE'>('FULL');
-  const [session, setSession] = useState<RAGInterviewSession | null>(null);
+  // Active Session & Interview State
+  const [session, setSession] = useState<InterviewSession | null>(null);
   const [typedAnswer, setTypedAnswer] = useState<string>('');
   const [submittingAnswer, setSubmittingAnswer] = useState<boolean>(false);
-  const [showWhyAsked, setShowWhyAsked] = useState<boolean>(false);
+  const [latestEvaluation, setLatestEvaluation] = useState<DetailedAnswerEvaluation | null>(null);
+  const [showEvaluationModal, setShowEvaluationModal] = useState<boolean>(false);
+  const [showEvidence, setShowEvidence] = useState<boolean>(false);
 
-  // User Projects & History state
-  const [myProjects, setMyProjects] = useState<any[]>([]);
-  const [history, setHistory] = useState<RAGInterviewSession[]>([]);
-
-  // Voice recording state
+  // Voice recording
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const recognitionRef = useRef<any>(null);
 
-  // Check default README on mount
+  // Final Assessment Report
+  const [finalReport, setFinalReport] = useState<FinalReport | null>(null);
+
+  // Load samples on mount
   useEffect(() => {
-    checkDefaultReadme();
-    fetchUserProjects();
-    fetchHistory();
+    fetch('/api/project-interview/analyze')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.samples)) {
+          setSampleRepos(data.samples);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  const checkDefaultReadme = async () => {
-    try {
-      const res = await fetch('/api/project-interview/default-readme');
-      const data = await res.json();
-      if (data.success && data.content) {
-        setDefaultReadmeFound(true);
-        setDefaultReadmePath(data.filepath || 'project-docs/README.md');
-      }
-    } catch {}
-  };
-
-  const fetchUserProjects = async () => {
-    try {
-      const res = await fetch('/api/project-interview/projects');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.projects)) {
-        setMyProjects(data.projects);
-      }
-    } catch {}
-  };
-
-  const fetchHistory = async () => {
-    try {
-      const res = await fetch('/api/project-interview/history');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.history)) {
-        setHistory(data.history);
-      }
-    } catch {}
-  };
-
-  // Load default README from /project-docs/README.md
-  const handleUseDefaultReadme = async () => {
-    setLoadingDefault(true);
-    setInputError('');
-    try {
-      const res = await fetch('/api/project-interview/default-readme');
-      const data = await res.json();
-      if (data.success && data.content) {
-        setReadmeText(data.content);
-        setFileName('project-docs/README.md');
-        await triggerIngestion(data.content, 'default_project_docs');
-      } else {
-        setInputError(data.error || 'Could not load default README.md');
-      }
-    } catch (e) {
-      setInputError('Failed to fetch default README.md');
-    } finally {
-      setLoadingDefault(false);
-    }
-  };
-
-  // Handle File Upload (.md, .txt)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.md') && !file.name.endsWith('.txt')) {
-      setInputError('Please upload a Markdown (.md) or Text (.txt) file.');
+  // Speech-to-Text handler
+  const toggleSpeechToText = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error("Speech recognition is not supported in your browser.");
       return;
     }
 
-    setInputError('');
-    setFileName(file.name);
+    if (isRecording) {
+      if (recognitionRef.current) recognitionRef.current.stop();
+      setIsRecording(false);
+    } else {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (!content || content.trim().length < 50) {
-        setInputError('Your README does not contain enough project information for a detailed interview.');
-        return;
+        recognition.onresult = (event: any) => {
+          let transcript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+          }
+          setTypedAnswer((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        };
+
+        recognition.onerror = () => {
+          setIsRecording(false);
+        };
+
+        recognition.onend = () => {
+          setIsRecording(false);
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+        setIsRecording(true);
+        toast.info("Listening... speak your answer clearly.");
+      } catch (err) {
+        setIsRecording(false);
       }
-      setReadmeText(content);
-    };
-    reader.readAsText(file);
+    }
   };
 
-  // Ingestion Pipeline Execution
-  const triggerIngestion = async (textToIngest: string, customProjId?: string) => {
-    const cleanText = textToIngest.trim();
-    if (!cleanText) {
-      setInputError('Your README content is empty.');
-      return;
-    }
-    if (cleanText.length < 50) {
-      setInputError('Your README does not contain enough project information for a detailed interview.');
-      return;
-    }
-
+  // Run Repository Analysis
+  const handleAnalyzeRepo = async (targetUrl?: string, sampleId?: string) => {
     setInputError('');
-    setWorkflowStep('ingesting');
-    setPipelineIdx(0);
+    const urlToUse = targetUrl || repoUrl;
 
-    // Animate pipeline execution
-    const interval = setInterval(() => {
-      setPipelineIdx((prev) => {
-        if (prev < RAG_PIPELINE_STEPS.length - 1) return prev + 1;
-        clearInterval(interval);
+    if (!sampleId && (!urlToUse || !urlToUse.trim())) {
+      setInputError('Please enter a valid GitHub repository URL.');
+      return;
+    }
+
+    setPhase('analyzing');
+    setPipelineStep(0);
+
+    // Animate progress through the pipeline steps
+    const stepInterval = setInterval(() => {
+      setPipelineStep((prev) => {
+        if (prev < ANALYSIS_PIPELINE_STEPS.length - 1) return prev + 1;
         return prev;
       });
-    }, 450);
+    }, 600);
 
     try {
-      const res = await fetch('/api/project-interview/ingest', {
+      const res = await fetch('/api/project-interview/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ readmeContent: cleanText, projectId: customProjId }),
+        body: JSON.stringify(sampleId ? { sampleId } : { repoUrl: urlToUse.trim() }),
       });
 
-      const data = await res.json();
-      if (data.success) {
-        setProjectId(data.projectId);
-        setProfile(data.profile);
-        setClaims(data.claims || []);
-        setKnowledgeNodes(data.knowledgeNodes || []);
-        setChunksCount(data.chunksCount || 12);
-        setTopicsCount(data.topics?.length || 8);
+      clearInterval(stepInterval);
+      setPipelineStep(ANALYSIS_PIPELINE_STEPS.length - 1);
 
-        setTimeout(() => {
-          setWorkflowStep('ready');
-          fetchUserProjects();
-        }, 1200);
-      } else {
-        setInputError(data.error || 'Failed to analyze project README.');
-        setWorkflowStep('input');
+      const data = await res.json();
+      if (!data.success || !data.projectKnowledge) {
+        throw new Error(data.error || 'Failed to analyze repository');
       }
-    } catch (err) {
-      setInputError('Network error during RAG ingestion pipeline.');
-      setWorkflowStep('input');
+
+      setProjectId(data.projectId);
+      setProjectKnowledge(data.projectKnowledge);
+      setPhase('overview');
+      toast.success(`Repository "${data.projectKnowledge.project}" analyzed successfully!`);
+    } catch (err: any) {
+      clearInterval(stepInterval);
+      setPhase('input');
+      setInputError(err.message || 'Error analyzing repository. Check URL or try a preset sample repo.');
+      toast.error(err.message || 'Analysis failed.');
     }
   };
 
-  // Start RAG Interview Session
-  const handleStartInterview = async (mode: 'QUICK' | 'FULL' | 'DEEP_TECHNICAL' | 'PROJECT_DEFENSE' | 'WEAKNESS_PRACTICE') => {
-    if (!projectId) return;
-    setSelectedMode(mode);
+  // Start Adaptive Interview Session
+  const handleStartInterview = async () => {
+    if (!projectId || !projectKnowledge) return;
 
     try {
+      toast.loading("Preparing adaptive technical questions grounded in your repository...", { id: 'start_session' });
       const res = await fetch('/api/project-interview/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, mode }),
+        body: JSON.stringify({
+          projectId,
+          mode: interviewMode,
+        }),
       });
 
       const data = await res.json();
-      if (data.success && data.session) {
-        setSession(data.session);
-        setWorkflowStep('interview');
-        setTypedAnswer('');
+      toast.dismiss('start_session');
+
+      if (!data.success || !data.session) {
+        throw new Error(data.error || 'Could not initialize interview session.');
       }
-    } catch (e) {
-      console.error('Error starting interview:', e);
+
+      setSession(data.session);
+      setTypedAnswer('');
+      setShowEvaluationModal(false);
+      setPhase('interview');
+      toast.success(`Interview started in ${interviewMode} mode!`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to start interview.');
     }
   };
 
-  // Submit Answer & RAG Follow-Up
+  // Submit Answer
   const handleSubmitAnswer = async () => {
-    if (!session || !typedAnswer.trim() || submittingAnswer) return;
+    if (!session || !typedAnswer.trim()) {
+      toast.warning("Please type or speak your answer before submitting.");
+      return;
+    }
 
     setSubmittingAnswer(true);
     try {
@@ -350,1062 +371,1000 @@ export default function ProjectInterviewPage() {
       });
 
       const data = await res.json();
-      if (data.success && data.session) {
-        setSession(data.session);
-        setTypedAnswer('');
-        setShowWhyAsked(false);
-        if (data.isCompleted) {
-          setWorkflowStep('report');
-          fetchHistory();
-          fetchUserProjects();
+      if (!data.success || !data.session) {
+        throw new Error(data.error || 'Error submitting answer');
+      }
+
+      setSession(data.session);
+      setLatestEvaluation(data.evaluation);
+      setShowEvaluationModal(true);
+
+      if (data.isCompleted) {
+        // Fetch Final Report
+        const repRes = await fetch(`/api/project-interview/report?sessionId=${session.sessionId}`);
+        const repData = await repRes.json();
+        if (repData.success && repData.report) {
+          setFinalReport(repData.report);
         }
       }
-    } catch (e) {
-      console.error('Error submitting answer:', e);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to evaluate answer.');
     } finally {
       setSubmittingAnswer(false);
     }
   };
 
-  // Toggle Speech Recognition Voice Input
-  const toggleVoiceInput = () => {
-    if (isRecording) {
-      if (recognitionRef.current) recognitionRef.current.stop();
-      setIsRecording(false);
-      return;
+  // Move to Next Question
+  const handleProceedToNextQuestion = () => {
+    setShowEvaluationModal(false);
+    setTypedAnswer('');
+    setShowEvidence(false);
+
+    if (session?.status === 'COMPLETED') {
+      setPhase('report');
     }
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser.');
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    recognition.onresult = (event: any) => {
-      let transcript = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
-      }
-      setTypedAnswer((prev) => (prev ? prev + ' ' + transcript : transcript));
-    };
-
-    recognition.onerror = () => setIsRecording(false);
-    recognition.onend = () => setIsRecording(false);
-
-    recognition.start();
-    recognitionRef.current = recognition;
-    setIsRecording(true);
   };
 
-  const currentQ = session && session.questions ? session.questions[session.currentQuestionIndex] : null;
-
-  // Chart data for history evolution
-  const trendData = history
-    .slice()
-    .reverse()
-    .map((s, idx) => ({
-      attempt: `Session ${idx + 1}`,
-      score: s.overallScore || 75,
-      readiness: s.defenseReadiness || 78,
-      name: s.projectName,
-    }));
+  const currentRecord = session?.records[session.currentQuestionIndex];
+  const currentQ = currentRecord?.question;
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Header */}
-      <header className="border-b bg-card/70 backdrop-blur-md sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-3.5 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white">
+      {/* Top Navigation Bar */}
+      <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground shadow-md">
-              <Bot className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-extrabold text-lg tracking-tight">AI PROJECT INTERVIEW PREP</h1>
-                <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20 font-bold uppercase">
-                  RAG Vector Engine
-                </Badge>
+            <Link href="/" className="flex items-center gap-2 text-slate-300 hover:text-white transition">
+              <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20">
+                IT
               </div>
-              <p className="text-xs text-muted-foreground">Upload or connect your project documentation. AI understands your project and interviews you specifically.</p>
+              <span className="font-semibold text-sm sm:text-base tracking-tight">IT Career Hub</span>
+            </Link>
+            <span className="text-slate-600">/</span>
+            <div className="flex items-center gap-2">
+              <Github className="w-4 h-4 text-blue-400" />
+              <span className="text-xs sm:text-sm font-medium text-slate-200">GitHub Project Defense & Knowledge Assessment</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant={activeTab === 'prep' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => {
-                setActiveTab('prep');
-                if (session && session.status === 'in_progress') setWorkflowStep('interview');
-              }}
-              className="text-xs font-semibold"
-            >
-              <Zap className="h-4 w-4 mr-1.5" /> Prep Session
-            </Button>
-            <Button
-              variant={activeTab === 'my_projects' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setActiveTab('my_projects')}
-              className="text-xs font-semibold"
-            >
-              <FolderGit2 className="h-4 w-4 mr-1.5" /> My Projects ({myProjects.length})
-            </Button>
+          <div className="flex items-center gap-3">
+            {phase !== 'input' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPhase('input')}
+                className="text-slate-400 hover:text-white text-xs"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                Analyze New Repo
+              </Button>
+            )}
+            <Link href="/dashboard">
+              <Button variant="outline" size="sm" className="border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs">
+                Dashboard
+              </Button>
+            </Link>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 flex-1 max-w-6xl">
+      {/* Main Body Content */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
 
-        {/* TAB 1: PREPARATION WORKFLOW */}
-        {activeTab === 'prep' && (
-          <div>
+        {/* PHASE 1: REPOSITORY URL INPUT SCREEN */}
+        {phase === 'input' && (
+          <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300">
+            {/* Hero Card */}
+            <div className="text-center space-y-4 pt-6 pb-2">
+              <Badge className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
+                <ShieldCheck className="w-3.5 h-3.5 mr-1 inline" />
+                Project Technical Ownership Assessment
+              </Badge>
+              <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
+                Assess Your Knowledge of Your <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">GitHub Project</span>
+              </h1>
+              <p className="text-slate-400 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
+                We don't just ask textbook trivia. Our AI analyzes your actual source code, APIs, database schemas, and architecture to conduct an adaptive interview and verify true project ownership.
+              </p>
+            </div>
 
-            {/* STEP 1: DOCUMENT INPUT AREA */}
-            {workflowStep === 'input' && (
-              <div className="space-y-10 max-w-4xl mx-auto">
-                <div className="text-center space-y-3">
-                  <Badge variant="secondary" className="px-3 py-1 text-xs font-bold bg-primary/10 text-primary uppercase">
-                    Source-Grounded Technical Interview Prep
-                  </Badge>
-                  <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-                    "Give AI your project documentation.<br />AI studies your project. Then AI interviews you."
-                  </h2>
-                  <p className="text-muted-foreground text-sm max-w-2xl mx-auto">
-                    Retrieval-Augmented Generation (RAG) indexes your project <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono text-xs">README.md</code> into vector chunks to construct project-grounded questions.
-                  </p>
-                </div>
-
-                {/* Auto-detected default README banner if found */}
-                {defaultReadmeFound && (
-                  <div className="p-4 rounded-xl bg-primary/10 border border-primary/30 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold shrink-0">
-                        <FileCode className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-sm">DEFAULT PROJECT DOCUMENTATION FOUND</p>
-                        <p className="text-xs text-muted-foreground">{defaultReadmePath} • Ready for auto-indexing</p>
-                      </div>
-                    </div>
-
-                    <Button
-                      onClick={handleUseDefaultReadme}
-                      disabled={loadingDefault}
-                      className="font-bold bg-primary text-primary-foreground shadow-md w-full sm:w-auto"
-                    >
-                      {loadingDefault ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
-                      USE PROJECT README & ANALYZE
-                    </Button>
-                  </div>
-                )}
-
-                {/* Central Document Area Card */}
-                <Card className="border-2 border-primary/20 shadow-2xl bg-card overflow-hidden">
-                  <CardHeader className="text-center pb-2 border-b">
-                    <div className="flex justify-center mb-1">
-                      <div className="h-12 w-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-1">
-                        <BookOpen className="h-6 w-6" />
-                      </div>
-                    </div>
-                    <CardTitle className="text-xl font-extrabold">📄 PROJECT README</CardTitle>
-                    <CardDescription className="text-xs">
-                      Your project documentation becomes your interview knowledge base.
-                    </CardDescription>
-                  </CardHeader>
-
-                  <CardContent className="p-6 sm:p-8 space-y-6">
-                    <div className="flex justify-center gap-2">
-                      <Button
-                        variant={!pasteMode ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setPasteMode(false)}
-                        className="text-xs font-semibold"
+            {/* Input Form Card */}
+            <Card className="border border-slate-800 bg-slate-900/90 shadow-2xl backdrop-blur-xl">
+              <CardHeader className="space-y-1">
+                <CardTitle className="text-lg text-white flex items-center gap-2">
+                  <Github className="w-5 h-5 text-blue-400" />
+                  Enter Public GitHub Repository URL
+                </CardTitle>
+                <CardDescription className="text-slate-400 text-xs sm:text-sm">
+                  The system analyzes manifest dependencies, routes, controllers, database models, and code logic.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Input
+                      type="url"
+                      placeholder="https://github.com/owner/repository"
+                      value={repoUrl}
+                      onChange={(e) => setRepoUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAnalyzeRepo()}
+                      className="bg-slate-950 border-slate-700/80 text-white placeholder:text-slate-600 h-12 text-sm pl-4 pr-10 focus-visible:ring-blue-500"
+                    />
+                    {repoUrl && (
+                      <button
+                        onClick={() => setRepoUrl('')}
+                        className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-300 text-xs"
                       >
-                        <Upload className="h-4 w-4 mr-1.5" /> Upload File (.md / .txt)
-                      </Button>
-                      <Button
-                        variant={pasteMode ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setPasteMode(true)}
-                        className="text-xs font-semibold"
-                      >
-                        <FileText className="h-4 w-4 mr-1.5" /> Paste Markdown
-                      </Button>
-                    </div>
-
-                    {!pasteMode ? (
-                      <div className="flex flex-col items-center justify-center p-8 sm:p-12 text-center rounded-xl bg-muted/40 border-2 border-dashed border-border hover:border-primary/50 transition-all">
-                        <Upload className="h-10 w-10 text-primary mb-3" />
-                        <h3 className="font-bold text-base mb-1">Drop README.md or project documentation here</h3>
-                        <p className="text-xs text-muted-foreground mb-4">Supports Markdown (.md) or Text (.txt) files</p>
-
-                        <div className="flex items-center gap-3">
-                          <label htmlFor="rag-file-input">
-                            <input
-                              id="rag-file-input"
-                              type="file"
-                              accept=".md,.txt"
-                              className="hidden"
-                              onChange={handleFileUpload}
-                            />
-                            <Button variant="outline" size="sm" className="cursor-pointer font-semibold" asChild>
-                              <span>Browse README File</span>
-                            </Button>
-                          </label>
-
-                          {defaultReadmeFound && (
-                            <Button variant="ghost" size="sm" onClick={handleUseDefaultReadme} className="text-xs">
-                              Use Default README.md
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <Textarea
-                          placeholder="Paste your project's # README.md markdown text here..."
-                          className="min-h-[220px] font-mono text-xs bg-background"
-                          value={readmeText}
-                          onChange={(e) => {
-                            setReadmeText(e.target.value);
-                            setFileName('Pasted Markdown');
-                          }}
-                        />
-                        <div className="flex justify-between items-center text-xs text-muted-foreground">
-                          <span>{readmeText.length} characters</span>
-                        </div>
-                      </div>
+                        ✕
+                      </button>
                     )}
-
-                    {inputError && (
-                      <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-semibold flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 shrink-0" />
-                        <span>{inputError}</span>
-                      </div>
-                    )}
-
-                    {readmeText && (
-                      <div className="p-4 rounded-xl bg-card border flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                          <div>
-                            <p className="font-bold text-sm">{fileName || 'README.md'}</p>
-                            <p className="text-xs text-muted-foreground">{readmeText.length} characters ready for RAG ingestion</p>
-                          </div>
-                        </div>
-
-                        <Button
-                          onClick={() => triggerIngestion(readmeText)}
-                          className="font-bold bg-primary text-primary-foreground shadow-lg"
-                        >
-                          ANALYZE MY README <ArrowRight className="h-4 w-4 ml-1.5" />
-                        </Button>
-                      </div>
-                    )}
-
-                    <div className="pt-2 text-center text-xs text-muted-foreground border-t">
-                      Supported: <span className="font-semibold text-foreground">README.md</span> • <span className="font-semibold text-foreground">Markdown documentation</span> • <span className="font-semibold text-foreground">Project documentation</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {/* STEP 2: RAG INGESTION PIPELINE ANIMATION */}
-            {workflowStep === 'ingesting' && (
-              <div className="max-w-xl mx-auto py-16 text-center space-y-8">
-                <div className="relative inline-flex items-center justify-center">
-                  <div className="h-24 w-24 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center animate-pulse">
-                    <Database className="h-10 w-10 text-primary animate-spin" style={{ animationDuration: '4s' }} />
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 font-bold px-3 py-1">
-                    RETRIEVAL-AUGMENTED GENERATION (RAG) ENGINE
-                  </Badge>
-                  <h2 className="text-2xl font-bold tracking-tight">INDEXING PROJECT KNOWLEDGE BASE...</h2>
-                  <p className="text-xs text-muted-foreground">Parsing markdown, generating vector embeddings, and indexing chunks</p>
-                </div>
-
-                {/* Pipeline visual diagram */}
-                <Card className="border shadow-lg p-6 text-left space-y-3">
-                  {RAG_PIPELINE_STEPS.map((stepName, idx) => {
-                    const isDone = idx < pipelineIdx;
-                    const isCurrent = idx === pipelineIdx;
-                    return (
-                      <div key={idx} className="flex items-center justify-between text-xs py-1">
-                        <div className="flex items-center gap-2.5">
-                          {isDone ? (
-                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                          ) : isCurrent ? (
-                            <RefreshCw className="h-4 w-4 text-primary animate-spin" />
-                          ) : (
-                            <div className="h-4 w-4 rounded-full border border-muted-foreground/30" />
-                          )}
-                          <span className={isDone ? 'font-semibold text-foreground' : isCurrent ? 'font-bold text-primary' : 'text-muted-foreground'}>
-                            {stepName}
-                          </span>
-                        </div>
-                        {isDone && <span className="text-[10px] text-emerald-500 font-bold">Indexed ✓</span>}
-                      </div>
-                    );
-                  })}
-                </Card>
-              </div>
-            )}
-
-            {/* STEP 3: PROJECT READY DASHBOARD & INTERACTIVE KNOWLEDGE MAP */}
-            {workflowStep === 'ready' && profile && (
-              <div className="space-y-8 max-w-5xl mx-auto">
-                <div className="flex items-center justify-between border-b pb-4">
-                  <div>
-                    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 font-bold px-3 py-1 mb-1">
-                      ✓ PROJECT READY FOR INTERVIEW
-                    </Badge>
-                    <h2 className="text-2xl font-extrabold">{profile.name}</h2>
-                  </div>
-                  <Button onClick={() => setWorkflowStep('mode_select')} className="font-bold bg-primary text-primary-foreground shadow-lg">
-                    START INTERVIEW <ArrowRight className="h-4 w-4 ml-1.5" />
+                  <Button
+                    onClick={() => handleAnalyzeRepo()}
+                    className="h-12 px-6 bg-blue-600 hover:bg-blue-500 text-white font-medium shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Analyze Repository
                   </Button>
                 </div>
 
-                {/* Indexing Stats Banner */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <Card className="border shadow-sm p-4 text-center">
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase">Documentation</p>
-                    <p className="font-bold text-sm text-foreground mt-1">{fileName || 'README.md'}</p>
-                  </Card>
-                  <Card className="border shadow-sm p-4 text-center">
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase">Knowledge Base</p>
-                    <p className="font-bold text-sm text-emerald-500 mt-1">Indexed ✓</p>
-                  </Card>
-                  <Card className="border shadow-sm p-4 text-center">
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase">Vector Chunks</p>
-                    <p className="font-bold text-sm text-primary mt-1">{chunksCount} Chunks</p>
-                  </Card>
-                  <Card className="border shadow-sm p-4 text-center">
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase">Interview Topics</p>
-                    <p className="font-bold text-sm text-indigo-500 mt-1">{topicsCount} Topics</p>
-                  </Card>
+                {inputError && (
+                  <div className="p-3 bg-red-950/40 border border-red-800/50 rounded-lg text-red-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{inputError}</span>
+                  </div>
+                )}
+
+                {/* Secret redaction guarantee */}
+                <div className="flex items-center gap-2 text-xs text-slate-500 pt-1">
+                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Security Guaranteed: API keys, tokens, and credentials are automatically scrubbed and redacted.</span>
                 </div>
+              </CardContent>
+            </Card>
 
-                {/* STRUCTURED PROJECT OVERVIEW CARD */}
-                <Card className="border-2 border-indigo-500/20 bg-card shadow-lg overflow-hidden">
-                  <CardHeader className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-blue-500/10 border-b pb-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Badge variant="secondary" className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold px-3 py-1 mb-1.5 border border-indigo-500/20">
-                          ✨ STRUCTURED PROJECT OVERVIEW
+            {/* Quick-Load Preset Sample Repositories */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-indigo-400" />
+                  Instant 1-Click Test Repositories (Diverse Tech Stacks)
+                </h3>
+                <span className="text-xs text-slate-500">No GitHub auth required</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {sampleRepos.map((sample) => (
+                  <Card
+                    key={sample.id}
+                    onClick={() => handleAnalyzeRepo(undefined, sample.id)}
+                    className="border border-slate-800 hover:border-blue-500/50 bg-slate-900/60 hover:bg-slate-900 transition cursor-pointer p-4 space-y-3 group flex flex-col justify-between"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Badge variant="outline" className="border-blue-500/30 text-blue-300 text-[10px] bg-blue-500/5">
+                          {sample.primaryLanguage}
                         </Badge>
-                        <CardTitle className="text-xl font-extrabold tracking-tight">
-                          {profile.structuredOverview?.project_name || profile.name}
-                        </CardTitle>
-                        {profile.structuredOverview?.one_line_summary && (
-                          <p className="text-sm font-semibold text-primary/90 mt-1">
-                            "{profile.structuredOverview.one_line_summary}"
-                          </p>
-                        )}
+                        <span className="text-xs text-slate-500 flex items-center gap-1">
+                          ★ {sample.stars}
+                        </span>
                       </div>
-                      <Badge variant="outline" className="text-xs font-mono border-indigo-500/30 text-indigo-600">
-                        Ground Truth Verified
-                      </Badge>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="p-6 space-y-6">
-                    {/* Short Understandable Overview */}
-                    <div>
-                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-indigo-500" /> Short Overview & Explanation
-                      </h3>
-                      <p className="text-sm text-foreground leading-relaxed p-4 rounded-xl bg-muted/30 border font-medium">
-                        {profile.structuredOverview?.overview ||
-                          `${profile.name} is a ${profile.projectType} designed to provide technical solutions including ${profile.keyFeatures.slice(0, 3).join(', ')}. Built using ${profile.techStack.join(', ')}.`}
+                      <h4 className="font-semibold text-sm text-white group-hover:text-blue-300 transition line-clamp-1">
+                        {sample.name}
+                      </h4>
+                      <p className="text-xs text-slate-400 line-clamp-2">
+                        {sample.description}
                       </p>
                     </div>
-
-                    {/* Categorized Tech Stack */}
-                    <div>
-                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                        <Cpu className="h-4 w-4 text-primary" /> Categorized Tech Stack
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {/* Frontend */}
-                        {(profile.structuredOverview?.tech_stack?.frontend?.length ?? 0) > 0 && (
-                          <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-1.5">
-                            <span className="text-[11px] font-bold uppercase text-blue-600 dark:text-blue-400 block">💻 Frontend</span>
-                            <div className="flex flex-wrap gap-1">
-                              {profile.structuredOverview?.tech_stack.frontend?.map((item, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-[11px] font-semibold bg-blue-500/10 text-blue-700 dark:text-blue-300">
-                                  {item}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Backend */}
-                        {(profile.structuredOverview?.tech_stack?.backend?.length ?? 0) > 0 && (
-                          <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/20 space-y-1.5">
-                            <span className="text-[11px] font-bold uppercase text-purple-600 dark:text-purple-400 block">⚙️ Backend</span>
-                            <div className="flex flex-wrap gap-1">
-                              {profile.structuredOverview?.tech_stack.backend?.map((item, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-[11px] font-semibold bg-purple-500/10 text-purple-700 dark:text-purple-300">
-                                  {item}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Database */}
-                        {(profile.structuredOverview?.tech_stack?.database?.length ?? 0) > 0 && (
-                          <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-1.5">
-                            <span className="text-[11px] font-bold uppercase text-emerald-600 dark:text-emerald-400 block">🗄️ Database</span>
-                            <div className="flex flex-wrap gap-1">
-                              {profile.structuredOverview?.tech_stack.database?.map((item, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-[11px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                                  {item}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* AI / ML */}
-                        {(profile.structuredOverview?.tech_stack?.ai_ml?.length ?? 0) > 0 && (
-                          <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-1.5">
-                            <span className="text-[11px] font-bold uppercase text-amber-600 dark:text-amber-400 block">🤖 AI / ML</span>
-                            <div className="flex flex-wrap gap-1">
-                              {profile.structuredOverview?.tech_stack.ai_ml?.map((item, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-[11px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                                  {item}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Deployment / Infra */}
-                        {(profile.structuredOverview?.tech_stack?.deployment_infra?.length ?? 0) > 0 && (
-                          <div className="p-3 rounded-xl bg-rose-500/5 border border-rose-500/20 space-y-1.5">
-                            <span className="text-[11px] font-bold uppercase text-rose-600 dark:text-rose-400 block">🚀 Deployment & Infra</span>
-                            <div className="flex flex-wrap gap-1">
-                              {profile.structuredOverview?.tech_stack.deployment_infra?.map((item, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-[11px] font-semibold bg-rose-500/10 text-rose-700 dark:text-rose-300">
-                                  {item}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Other Tools */}
-                        {(profile.structuredOverview?.tech_stack?.other_tools?.length ?? 0) > 0 && (
-                          <div className="p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20 space-y-1.5">
-                            <span className="text-[11px] font-bold uppercase text-cyan-600 dark:text-cyan-400 block">🛠️ Other Tools</span>
-                            <div className="flex flex-wrap gap-1">
-                              {profile.structuredOverview?.tech_stack.other_tools?.map((item, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-[11px] font-semibold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">
-                                  {item}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Fallback if tech_stack object is empty */}
-                      {!profile.structuredOverview?.tech_stack && profile.techStack?.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {profile.techStack.map((tech, idx) => (
-                            <Badge key={idx} variant="outline" className="font-semibold text-xs">
-                              {tech}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
+                    <div className="pt-2 flex items-center text-xs text-blue-400 font-medium gap-1 group-hover:translate-x-0.5 transition">
+                      <span>Test this architecture</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
 
-                    {/* APIs and Keys Used */}
-                    <div>
-                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-2">
-                        <ShieldCheck className="h-4 w-4 text-emerald-500" /> APIs & Keys Mentioned
-                      </h3>
-                      {profile.structuredOverview?.apis_and_keys_used && profile.structuredOverview.apis_and_keys_used.length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          {profile.structuredOverview.apis_and_keys_used.map((api, idx) => (
-                            <div key={idx} className="p-3 rounded-lg bg-card border text-xs flex items-start gap-2.5 shadow-sm">
-                              <div className="h-2 w-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                              <div>
-                                <span className="font-mono font-bold text-foreground block">{api.name}</span>
-                                <span className="text-muted-foreground text-[11px]">{api.purpose}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground italic bg-muted/20 p-3 rounded-lg border">
-                          No external API keys mentioned in README documentation.
-                        </p>
-                      )}
-                    </div>
+            {/* Value Proposition Highlights */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-slate-800/60 text-slate-400 text-xs">
+              <div className="flex items-start gap-2.5">
+                <Code2 className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-slate-200 block text-sm mb-0.5">Code Defense Questions</strong>
+                  Shows your actual function snippets and asks you to defend logic and error handling.
+                </div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <Layers className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-slate-200 block text-sm mb-0.5">Technology Agnostic</strong>
+                  Detects Next.js, FastAPI, Spring Boot, Django, Flutter, and adapts questions dynamically.
+                </div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-slate-200 block text-sm mb-0.5">Contradiction Detection</strong>
+                  Flags discrepancies if your answers conflict with what's actually in your repository.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
-                    {/* Architecture & Notable Features */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                      {profile.structuredOverview?.notable_features && profile.structuredOverview.notable_features.length > 0 && (
-                        <div className="space-y-2">
-                          <h4 className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5">
-                            <Zap className="h-3.5 w-3.5 text-amber-500" /> Notable Features
-                          </h4>
-                          <ul className="space-y-1.5 text-xs">
-                            {profile.structuredOverview.notable_features.map((feat, idx) => (
-                              <li key={idx} className="flex items-start gap-2 text-foreground">
-                                <span className="text-amber-500 font-bold">•</span>
-                                <span>{feat}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+        {/* PHASE 2: ANIMATED ANALYSIS PROGRESS */}
+        {phase === 'analyzing' && (
+          <div className="max-w-2xl mx-auto py-16 space-y-8 animate-in fade-in duration-300 text-center">
+            <div className="relative w-20 h-20 mx-auto">
+              <div className="absolute inset-0 rounded-full border-4 border-blue-500/20 animate-ping" />
+              <div className="relative rounded-full border-4 border-t-blue-500 border-slate-800 w-20 h-20 animate-spin flex items-center justify-center">
+                <Github className="w-8 h-8 text-blue-400" />
+              </div>
+            </div>
 
-                      {profile.structuredOverview?.architecture_highlights && profile.structuredOverview.architecture_highlights.length > 0 && (
-                        <div className="space-y-2">
-                          <h4 className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5">
-                            <Layers className="h-3.5 w-3.5 text-indigo-500" /> Architecture Highlights
-                          </h4>
-                          <ul className="space-y-1.5 text-xs">
-                            {profile.structuredOverview.architecture_highlights.map((arch, idx) => (
-                              <li key={idx} className="flex items-start gap-2 text-foreground">
-                                <span className="text-indigo-500 font-bold">•</span>
-                                <span>{arch}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-white tracking-tight">
+                Analyzing GitHub Repository
+              </h2>
+              <p className="text-sm text-slate-400">
+                Inspecting manifest files, code structures, routing controllers, and database models...
+              </p>
+            </div>
 
-                    {/* Potential Interview Focus Areas */}
-                    {profile.structuredOverview?.potential_interview_focus_areas && profile.structuredOverview.potential_interview_focus_areas.length > 0 && (
-                      <div className="pt-2 border-t">
-                        <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2 flex items-center gap-1.5">
-                          <Target className="h-3.5 w-3.5 text-rose-500" /> Potential Interview Focus Areas
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {profile.structuredOverview.potential_interview_focus_areas.map((focus, idx) => (
-                            <div key={idx} className="p-2.5 rounded-lg bg-rose-500/5 border border-rose-500/20 text-xs font-medium text-foreground flex items-center gap-2">
-                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 shrink-0" />
-                              <span>{focus}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+            {/* Stepper progress */}
+            <Card className="border border-slate-800 bg-slate-900/80 p-6 text-left space-y-3">
+              {ANALYSIS_PIPELINE_STEPS.map((stepName, idx) => {
+                const isDone = idx < pipelineStep;
+                const isCurrent = idx === pipelineStep;
+                return (
+                  <div key={idx} className="flex items-center gap-3 text-xs sm:text-sm">
+                    {isDone ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : isCurrent ? (
+                      <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin shrink-0" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />
                     )}
-                  </CardContent>
-                </Card>
+                    <span className={isDone ? 'text-slate-300' : isCurrent ? 'text-blue-300 font-medium' : 'text-slate-600'}>
+                      {stepName}
+                    </span>
+                  </div>
+                );
+              })}
+            </Card>
+          </div>
+        )}
 
-                {/* INTERACTIVE PROJECT KNOWLEDGE MAP GRAPH */}
-                <Card className="border-2 border-primary/20 shadow-lg">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg font-extrabold flex items-center gap-2">
-                          <Network className="h-5 w-5 text-primary" /> PROJECT KNOWLEDGE MAP
-                        </CardTitle>
-                        <CardDescription className="text-xs">
-                          Visual node graph constructed dynamically from indexed README sections. Click a node to explore retrieved knowledge.
-                        </CardDescription>
-                      </div>
-                      <Badge variant="outline" className="text-xs font-mono">Dynamic Graph</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="p-6 rounded-xl bg-card border flex items-center justify-center flex-wrap gap-4 text-center">
-                      <div className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-extrabold text-sm shadow-md">
-                        {profile.name}
-                      </div>
+        {/* PHASE 3: REPOSITORY KNOWLEDGE OVERVIEW & MODE SELECTION */}
+        {phase === 'overview' && projectKnowledge && (
+          <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-300">
+            {/* Header / Summary Card */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
+                    Analysis Complete
+                  </Badge>
+                  <span className="text-xs text-slate-500">{projectKnowledge.totalFilesCount} files analyzed</span>
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2">
+                  <Github className="w-6 h-6 text-blue-400" />
+                  {projectKnowledge.project}
+                </h1>
+                <p className="text-sm text-slate-400 mt-1 max-w-2xl">
+                  {projectKnowledge.description}
+                </p>
+              </div>
 
-                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleStartInterview}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-6 text-base shadow-xl shadow-blue-600/30 flex items-center gap-2"
+                >
+                  <Play className="w-4 h-4 fill-white" />
+                  Start Project Interview
+                </Button>
+              </div>
+            </div>
 
-                      <div className="flex flex-wrap items-center justify-center gap-3">
-                        {knowledgeNodes.map((node) => (
-                          <div
-                            key={node.id}
-                            onClick={() => setSelectedNode(node)}
-                            className="px-3.5 py-2 rounded-xl bg-muted/60 hover:bg-primary/10 hover:border-primary border border-border text-xs font-bold cursor-pointer transition-all hover:scale-105"
-                          >
-                            <span className="text-primary mr-1 font-mono">•</span>
-                            {node.label}
-                          </div>
+            {/* Mode Selection */}
+            <Card className="border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Select Interview Depth</h3>
+                  <p className="text-xs text-slate-400">Choose how deep the adaptive interview should probe your project.</p>
+                </div>
+                <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-xs">
+                  Active Mode: {interviewMode}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div
+                  onClick={() => setInterviewMode('QUICK')}
+                  className={`p-3.5 rounded-lg border cursor-pointer transition ${interviewMode === 'QUICK' ? 'border-blue-500 bg-blue-950/20 ring-1 ring-blue-500' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}`}
+                >
+                  <div className="font-semibold text-sm text-white flex items-center justify-between">
+                    <span>Quick Assessment</span>
+                    <span className="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded">10 Questions</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Core project architecture, major technologies, and primary feature flow.</p>
+                </div>
+
+                <div
+                  onClick={() => setInterviewMode('STANDARD')}
+                  className={`p-3.5 rounded-lg border cursor-pointer transition ${interviewMode === 'STANDARD' ? 'border-blue-500 bg-blue-950/20 ring-1 ring-blue-500' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}`}
+                >
+                  <div className="font-semibold text-sm text-white flex items-center justify-between">
+                    <span>Standard Interview</span>
+                    <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded">20 Questions</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Full-spectrum interview: code defense, data model design, and error handling.</p>
+                </div>
+
+                <div
+                  onClick={() => setInterviewMode('DEEP_TECHNICAL')}
+                  className={`p-3.5 rounded-lg border cursor-pointer transition ${interviewMode === 'DEEP_TECHNICAL' ? 'border-blue-500 bg-blue-950/20 ring-1 ring-blue-500' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}`}
+                >
+                  <div className="font-semibold text-sm text-white flex items-center justify-between">
+                    <span>Deep Technical</span>
+                    <span className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded">Adaptive Defense</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Scalability at 100k users, failure recovery, security tradeoffs, and refactoring.</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Grid of Extracted Tech & Architecture */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left 2 Cols: Stack & Architecture */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Detected Tech Stack Card */}
+                <Card className="border border-slate-800 bg-slate-900/80 p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-blue-400" />
+                      Detected Technology Stack
+                    </h3>
+                    <Badge className="bg-blue-500/10 text-blue-300 border-blue-500/30 text-xs">
+                      {projectKnowledge.techStackDetailed.primaryStackLabel}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-500 block mb-1">Languages</span>
+                      <div className="flex flex-wrap gap-1">
+                        {projectKnowledge.techStackDetailed.languages.map((l) => (
+                          <Badge key={l} variant="secondary" className="bg-slate-800 text-slate-200 text-[11px]">{l}</Badge>
                         ))}
                       </div>
                     </div>
 
-                    {/* Modal/Drawer when Node is Clicked */}
-                    {selectedNode && (
-                      <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 text-xs space-y-2">
-                        <div className="flex items-center justify-between font-bold">
-                          <span className="text-primary uppercase flex items-center gap-1.5">
-                            <BookOpen className="h-4 w-4" /> Knowledge extracted from README: {selectedNode.section}
-                          </span>
-                          <Button variant="ghost" size="sm" onClick={() => setSelectedNode(null)} className="h-6 text-[10px]">
-                            Close
-                          </Button>
-                        </div>
-                        <p className="text-foreground leading-relaxed font-mono bg-background p-3 rounded-lg border">
-                          "{selectedNode.snippet}"
-                        </p>
+                    <div>
+                      <span className="text-slate-500 block mb-1">Frontend</span>
+                      <div className="flex flex-wrap gap-1">
+                        {projectKnowledge.techStackDetailed.frontendFrameworks.length > 0 ? (
+                          projectKnowledge.techStackDetailed.frontendFrameworks.map((f) => (
+                            <Badge key={f} variant="secondary" className="bg-slate-800 text-slate-200 text-[11px]">{f}</Badge>
+                          ))
+                        ) : <span className="text-slate-600">N/A</span>}
                       </div>
-                    )}
-                  </CardContent>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-500 block mb-1">Backend</span>
+                      <div className="flex flex-wrap gap-1">
+                        {projectKnowledge.techStackDetailed.backendFrameworks.length > 0 ? (
+                          projectKnowledge.techStackDetailed.backendFrameworks.map((b) => (
+                            <Badge key={b} variant="secondary" className="bg-slate-800 text-slate-200 text-[11px]">{b}</Badge>
+                          ))
+                        ) : <span className="text-slate-600">N/A</span>}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-500 block mb-1">Databases & ORM</span>
+                      <div className="flex flex-wrap gap-1">
+                        {[...projectKnowledge.techStackDetailed.databases, ...projectKnowledge.techStackDetailed.ormOrQueryBuilders].map((d) => (
+                          <Badge key={d} variant="secondary" className="bg-slate-800 text-slate-200 text-[11px]">{d}</Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-500 block mb-1">Authentication</span>
+                      <div className="flex flex-wrap gap-1">
+                        {projectKnowledge.techStackDetailed.authentication.length > 0 ? (
+                          projectKnowledge.techStackDetailed.authentication.map((a) => (
+                            <Badge key={a} variant="secondary" className="bg-emerald-950/60 text-emerald-300 border border-emerald-800/40 text-[11px]">{a}</Badge>
+                          ))
+                        ) : <span className="text-slate-600">Standard</span>}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-500 block mb-1">Cloud & DevOps</span>
+                      <div className="flex flex-wrap gap-1">
+                        {projectKnowledge.techStackDetailed.cloudAndDevOps.length > 0 ? (
+                          projectKnowledge.techStackDetailed.cloudAndDevOps.map((c) => (
+                            <Badge key={c} variant="secondary" className="bg-slate-800 text-slate-200 text-[11px]">{c}</Badge>
+                          ))
+                        ) : <span className="text-slate-600">Standard</span>}
+                      </div>
+                    </div>
+                  </div>
                 </Card>
 
-                {/* WHAT YOU CLAIMED SECTION */}
-                <Card className="border shadow-md">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-bold flex items-center gap-2">
-                      <Award className="h-5 w-5 text-primary" /> WHAT YOU CLAIMED
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      Extracted testable claim statements that AI will target during your interview session.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {claims.map((c) => (
-                      <div key={c.id} className="p-3 rounded-xl bg-muted/30 border border-border text-xs flex items-start gap-2.5">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                        <div>
-                          <Badge variant="outline" className="text-[10px] mb-1 font-bold">
-                            {c.category}
-                          </Badge>
-                          <p className="font-semibold text-foreground">"{c.claim}"</p>
+                {/* Architecture Request Flow Diagram */}
+                <Card className="border border-slate-800 bg-slate-900/80 p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Network className="w-4 h-4 text-purple-400" />
+                      End-to-End Architectural Flow
+                    </h3>
+                    <span className="text-xs text-slate-400">{projectKnowledge.architecture.pattern}</span>
+                  </div>
+
+                  <div className="space-y-2 pt-2">
+                    {projectKnowledge.architecture.flowDiagram.map((step, idx) => (
+                      <div key={idx} className="flex items-center gap-3 text-xs">
+                        <div className="h-6 w-6 rounded-full bg-blue-900/50 text-blue-300 font-bold flex items-center justify-center text-[10px] shrink-0 border border-blue-500/30">
+                          {idx + 1}
                         </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-
-                <div className="flex justify-end pt-4 gap-3">
-                  <Button onClick={() => setWorkflowStep('mode_select')} size="lg" className="font-bold bg-primary text-primary-foreground shadow-xl">
-                    START PROJECT INTERVIEW <ArrowRight className="h-5 w-5 ml-2" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: INTERVIEW MODES SELECTION */}
-            {workflowStep === 'mode_select' && (
-              <div className="max-w-4xl mx-auto space-y-8">
-                <div className="text-center space-y-2">
-                  <Badge variant="secondary" className="px-3 py-1 text-xs font-bold bg-primary/10 text-primary">
-                    SELECT INTERVIEW DEPTH
-                  </Badge>
-                  <h2 className="text-3xl font-extrabold">CHOOSE PREPARATION MODE</h2>
-                  <p className="text-muted-foreground text-sm">Select how deep you want the AI interviewer to probe your RAG Knowledge Base.</p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <Card
-                    onClick={() => handleStartInterview('QUICK')}
-                    className="border-2 hover:border-primary cursor-pointer transition-all hover:shadow-xl group"
-                  >
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 font-bold">10 Questions</Badge>
-                        <Clock className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </div>
-                      <CardTitle className="text-lg font-bold mt-2">QUICK PREPARATION</CardTitle>
-                      <CardDescription>Core project architecture and stack questions.</CardDescription>
-                    </CardHeader>
-                  </Card>
-
-                  <Card
-                    onClick={() => handleStartInterview('FULL')}
-                    className="border-2 border-primary bg-primary/5 hover:bg-primary/10 cursor-pointer transition-all hover:shadow-xl group"
-                  >
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <Badge variant="secondary" className="bg-primary/20 text-primary font-bold">20 Questions</Badge>
-                        <Zap className="h-5 w-5 text-primary" />
-                      </div>
-                      <CardTitle className="text-lg font-bold mt-2">FULL PROJECT INTERVIEW</CardTitle>
-                      <CardDescription>Full RAG retrieval across all README sections with adaptive follow-ups.</CardDescription>
-                    </CardHeader>
-                  </Card>
-
-                  <Card
-                    onClick={() => handleStartInterview('DEEP_TECHNICAL')}
-                    className="border-2 hover:border-purple-500 cursor-pointer transition-all hover:shadow-xl group"
-                  >
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <Badge variant="secondary" className="bg-purple-500/10 text-purple-600 font-bold">Technical</Badge>
-                        <Cpu className="h-5 w-5 text-muted-foreground group-hover:text-purple-500 transition-colors" />
-                      </div>
-                      <CardTitle className="text-lg font-bold mt-2">DEEP TECHNICAL</CardTitle>
-                      <CardDescription>Architecture + implementation + database schema + security.</CardDescription>
-                    </CardHeader>
-                  </Card>
-
-                  <Card
-                    onClick={() => handleStartInterview('PROJECT_DEFENSE')}
-                    className="border-2 hover:border-amber-500 cursor-pointer transition-all hover:shadow-xl group"
-                  >
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 font-bold">Claim Defense</Badge>
-                        <ShieldCheck className="h-5 w-5 text-muted-foreground group-hover:text-amber-500 transition-colors" />
-                      </div>
-                      <CardTitle className="text-lg font-bold mt-2">PROJECT DEFENSE</CardTitle>
-                      <CardDescription>AI challenges explicit claim statements extracted from your README.</CardDescription>
-                    </CardHeader>
-                  </Card>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 5: RAG AI INTERVIEWER */}
-            {workflowStep === 'interview' && session && currentQ && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-                <div className="lg:col-span-2 space-y-6">
-                  <Card className="border shadow-xl bg-card/90">
-                    <CardHeader className="pb-3 border-b">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                            <Bot className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <h3 className="font-extrabold text-base">AI PROJECT INTERVIEWER</h3>
-                            <p className="text-xs text-muted-foreground">"I'll ask questions based on what your project actually contains."</p>
-                          </div>
+                        <div className="flex-1 bg-slate-950 border border-slate-800/80 rounded-lg p-2 text-slate-300 font-mono text-[11px]">
+                          {step}
                         </div>
-
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="bg-primary/10 text-primary font-bold font-mono text-xs">
-                            LEVEL {currentQ.difficulty} / 7
-                          </Badge>
-                          <Badge variant="secondary" className="text-xs font-semibold">
-                            Q{session.currentQuestionIndex + 1} of {session.mode === 'QUICK' ? 5 : 8}
-                          </Badge>
-                        </div>
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="p-6 space-y-6">
-                      {/* CONSISTENCY ALERT */}
-                      {currentQ.evaluation?.consistencyAlert && (
-                        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-500 font-semibold flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 shrink-0" />
-                          <span>⚠️ CONSISTENCY ALERT: {currentQ.evaluation.consistencyAlert}</span>
-                        </div>
-                      )}
-
-                      {/* CLAIM NEEDS PREPARATION ALERT */}
-                      {currentQ.evaluation?.claimPreparationAlert && (
-                        <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/30 text-xs text-destructive font-semibold flex items-center gap-2">
-                          <AlertCircle className="h-4 w-4 shrink-0" />
-                          <span>⚠️ CLAIM NEEDS PREPARATION: {currentQ.evaluation.claimPreparationAlert}</span>
-                        </div>
-                      )}
-
-                      {/* RAG Question Block */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          {/* SOURCE Tag */}
-                          <Badge variant="secondary" className="bg-primary/10 text-primary font-bold text-xs font-mono">
-                            SOURCE: {currentQ.category} | README.md
-                          </Badge>
-
-                          {/* 23. SOURCE-GROUNDED TRACEABILITY BUTTON */}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowWhyAsked(!showWhyAsked)}
-                            className="text-xs text-primary hover:underline h-auto p-0 font-semibold"
-                          >
-                            <HelpCircle className="h-3.5 w-3.5 mr-1" /> [ WHY AM I BEING ASKED THIS? ]
-                          </Button>
-                        </div>
-
-                        {showWhyAsked && (
-                          <div className="p-3.5 rounded-xl bg-muted text-xs border border-border space-y-1">
-                            <p className="font-bold text-primary uppercase">Retrieved README Section Context</p>
-                            <p className="text-muted-foreground font-mono">{currentQ.reason}</p>
-                          </div>
+                        {idx < projectKnowledge.architecture.flowDiagram.length - 1 && (
+                          <div className="text-slate-600 hidden sm:block">↓</div>
                         )}
-
-                        <p className="text-lg font-bold leading-relaxed text-foreground">
-                          {currentQ.question}
-                        </p>
-                      </div>
-
-                      {/* Answer Input */}
-                      <div className="space-y-3 pt-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-2">
-                            <User className="h-3.5 w-3.5" /> Your Technical Answer
-                          </label>
-                          <Button
-                            variant={isRecording ? "destructive" : "outline"}
-                            size="sm"
-                            onClick={toggleVoiceInput}
-                            className="h-7 text-xs font-semibold"
-                          >
-                            {isRecording ? <MicOff className="h-3.5 w-3.5 mr-1 animate-pulse" /> : <Mic className="h-3.5 w-3.5 mr-1" />}
-                            {isRecording ? "Recording..." : "Voice Input"}
-                          </Button>
-                        </div>
-
-                        <Textarea
-                          placeholder="Explain your architectural trade-offs, database choices, and code implementation details..."
-                          className="min-h-[140px] text-sm bg-background"
-                          value={typedAnswer}
-                          onChange={(e) => setTypedAnswer(e.target.value)}
-                        />
-
-                        <div className="flex justify-end">
-                          <Button
-                            onClick={handleSubmitAnswer}
-                            disabled={!typedAnswer.trim() || submittingAnswer}
-                            className="font-bold bg-primary text-primary-foreground shadow-lg"
-                          >
-                            {submittingAnswer ? (
-                              <>
-                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Evaluating RAG Answer...
-                              </>
-                            ) : (
-                              <>
-                                Submit Answer <Send className="h-4 w-4 ml-2" />
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Evaluation Feedback on Submit */}
-                      {currentQ.evaluation && (
-                        <div className="p-4 rounded-xl bg-muted/50 border space-y-2 text-xs">
-                          <div className="flex items-center justify-between font-bold">
-                            <span>RAG Technical Evaluation</span>
-                            <span className="text-primary text-sm">{currentQ.evaluation.score}/100</span>
-                          </div>
-                          <p className="text-muted-foreground">{currentQ.evaluation.feedback}</p>
-                          {currentQ.evaluation.betterAnswerExample && (
-                            <p className="text-[11px] font-mono text-emerald-500 mt-1">
-                              Tip: {currentQ.evaluation.betterAnswerExample}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Right Panel: Knowledge Map Live State */}
-                <div className="space-y-6">
-                  <Card className="border shadow-lg">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-                        <BarChart2 className="h-4 w-4 text-primary" /> LIVE KNOWLEDGE MAP
-                      </CardTitle>
-                      <CardDescription className="text-xs">Assessment updating live from your answers</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-2.5">
-                      {Object.entries(session.knowledgeMap).map(([topic, rating]) => (
-                        <div key={topic} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 text-xs">
-                          <span className="font-semibold text-foreground">{topic}</span>
-                          <Badge
-                            variant="outline"
-                            className={
-                              rating === 'Strong'
-                                ? 'bg-emerald-500/10 text-emerald-500 font-bold border-emerald-500/30'
-                                : rating === 'Weak'
-                                ? 'bg-destructive/10 text-destructive font-bold border-destructive/30'
-                                : 'bg-amber-500/10 text-amber-500 font-bold border-amber-500/30'
-                            }
-                          >
-                            ● {rating}
-                          </Badge>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs font-bold uppercase tracking-wider">Claims Being Tested</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      {session.claims.map((c) => (
-                        <div key={c.id} className="text-[11px] p-2 rounded bg-muted/30 border border-border">
-                          <p className="font-semibold text-muted-foreground">"{c.claim}"</p>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 6: FINAL INTERVIEW REPORT & PERSONALIZED PREPARATION PLAN */}
-            {workflowStep === 'report' && session && (
-              <div className="max-w-4xl mx-auto space-y-8">
-                <div className="text-center space-y-3">
-                  <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 font-bold px-3 py-1">
-                    ✓ PROJECT INTERVIEW COMPLETED
-                  </Badge>
-                  <h2 className="text-3xl font-extrabold">PROJECT INTERVIEW REPORT</h2>
-                  <p className="text-sm text-muted-foreground">{session.projectName}</p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                  <Card className="border shadow-lg text-center p-6 bg-gradient-to-b from-primary/10 to-card">
-                    <p className="text-xs font-bold text-muted-foreground uppercase mb-1">Overall Readiness</p>
-                    <p className="text-5xl font-extrabold text-primary">{session.defenseReadiness || 82}%</p>
-                    <Progress value={session.defenseReadiness || 82} className="h-2 mt-4" />
-                  </Card>
-
-                  <Card className="border shadow-md col-span-2 p-6">
-                    <h3 className="font-bold text-sm mb-4 uppercase tracking-wider text-muted-foreground">Score Breakdown</h3>
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      {Object.entries(session.categoryScores || {}).map(([cat, score]) => (
-                        <div key={cat} className="space-y-1">
-                          <div className="flex justify-between font-semibold">
-                            <span>{cat}</span>
-                            <span className="text-primary">{score}%</span>
-                          </div>
-                          <Progress value={score} className="h-1.5" />
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                </div>
-
-                {/* 22. PERSONALIZED PREPARATION PLAN */}
-                <Card className="border-2 border-primary/20 shadow-xl">
-                  <CardHeader>
-                    <CardTitle className="text-lg font-extrabold flex items-center gap-2">
-                      <Target className="h-5 w-5 text-primary" /> YOUR NEXT PREPARATION PLAN
-                    </CardTitle>
-                    <CardDescription className="text-xs">Priority preparation tasks generated from your weak answers and project README.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {session.personalizedPlan?.map((item) => (
-                      <div key={item.priority} className="p-4 rounded-xl bg-card border space-y-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <Badge className="bg-primary text-primary-foreground font-bold">
-                            Priority {item.priority}
-                          </Badge>
-                          <span className="font-extrabold text-sm">{item.topic}</span>
-                        </div>
-                        <p className="text-muted-foreground"><strong className="text-foreground">Why prepare:</strong> {item.whyPrepare}</p>
-                        <p className="text-muted-foreground"><strong className="text-foreground">What to learn:</strong> {item.whatToLearn}</p>
-                        <div className="pt-1">
-                          <p className="font-bold text-primary mb-1">Questions to practice:</p>
-                          <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground font-mono text-[11px]">
-                            {item.practiceQuestions.map((pq, i) => (
-                              <li key={i}>{pq}</li>
-                            ))}
-                          </ul>
-                        </div>
                       </div>
                     ))}
-                  </CardContent>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Right Col: Features, APIs, Code Defense Snippets */}
+              <div className="space-y-6">
+                {/* Detected Features */}
+                <Card className="border border-slate-800 bg-slate-900/80 p-5 space-y-3">
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Flame className="w-4 h-4 text-amber-400" />
+                    Major Features
+                  </h3>
+                  <ul className="space-y-2 text-xs text-slate-300">
+                    {projectKnowledge.features.map((feat, idx) => (
+                      <li key={idx} className="flex items-center gap-2">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </Card>
 
-                <div className="flex justify-between items-center pt-4">
-                  <Button variant="outline" onClick={() => setWorkflowStep('input')}>
-                    <RotateCcw className="h-4 w-4 mr-2" /> Upload Another README
-                  </Button>
-                  <Button onClick={() => setWorkflowStep('input')} className="font-bold bg-primary text-primary-foreground">
-                    START NEW INTERVIEW <ArrowRight className="h-4 w-4 ml-2" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-          </div>
-        )}
-
-        {/* TAB 2: MY PROJECTS (24. DYNAMIC PROJECTS LIST) */}
-        {activeTab === 'my_projects' && (
-          <div className="space-y-8 max-w-5xl mx-auto">
-            <div className="flex items-center justify-between border-b pb-4">
-              <div>
-                <h2 className="text-2xl font-extrabold tracking-tight">MY PROJECTS</h2>
-                <p className="text-xs text-muted-foreground">Dynamically generated project knowledge bases from uploaded/indexed README files.</p>
-              </div>
-              <Button onClick={() => { setActiveTab('prep'); setWorkflowStep('input'); }} className="font-bold">
-                <Upload className="h-4 w-4 mr-2" /> Upload New README
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {myProjects.map((p) => (
-                <Card key={p.projectId} className="border shadow-md hover:border-primary transition-all">
-                  <CardHeader className="pb-3">
-                    <div className="flex justify-between items-start">
-                      <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary font-bold">
-                        README Indexed ✓
-                      </Badge>
-                      <span className="text-[11px] text-muted-foreground">
-                        {p.chunksCount || 12} Chunks
-                      </span>
+                {/* API & Database Models Discovered */}
+                <Card className="border border-slate-800 bg-slate-900/80 p-5 space-y-3">
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Database className="w-4 h-4 text-indigo-400" />
+                    APIs & Database Models
+                  </h3>
+                  <div className="space-y-2 text-xs">
+                    <span className="text-slate-500 block">Endpoints:</span>
+                    <div className="space-y-1">
+                      {projectKnowledge.apis.slice(0, 4).map((api, idx) => (
+                        <div key={idx} className="flex items-center gap-2 font-mono text-[11px] text-slate-300 bg-slate-950 px-2 py-1 rounded border border-slate-800/60">
+                          <span className={`text-[10px] font-bold ${api.method === 'POST' ? 'text-emerald-400' : api.method === 'GET' ? 'text-blue-400' : 'text-amber-400'}`}>
+                            {api.method}
+                          </span>
+                          <span className="truncate">{api.path}</span>
+                        </div>
+                      ))}
                     </div>
-                    <CardTitle className="text-lg font-bold mt-2">{p.name || p.profile?.name}</CardTitle>
-                    <CardDescription className="text-xs">{p.profile?.projectType || 'Full Stack Web Application'}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4 text-xs">
-                    <div className="flex flex-wrap gap-1">
-                      {(p.profile?.techStack || ['React', 'Node.js', 'Express', 'MongoDB']).map((tech: string, i: number) => (
-                        <Badge key={i} variant="secondary" className="font-mono text-[10px]">
-                          {tech}
+
+                    <span className="text-slate-500 block pt-2">Database Models:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {projectKnowledge.databaseModels.map((m, idx) => (
+                        <Badge key={idx} variant="outline" className="text-[11px] border-indigo-500/30 text-indigo-300 bg-indigo-950/20">
+                          {m.name}
                         </Badge>
                       ))}
                     </div>
-
-                    <div className="flex justify-between items-center pt-2 border-t">
-                      <span className="text-muted-foreground font-medium">Readiness: <strong className="text-primary">{p.readiness || 82}%</strong></span>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setProjectId(p.projectId);
-                          setProfile(p.profile);
-                          setClaims(p.claims || []);
-                          setKnowledgeNodes(p.knowledgeNodes || []);
-                          setChunksCount(p.chunksCount || 12);
-                          setTopicsCount(p.topics?.length || 8);
-                          setActiveTab('prep');
-                          setWorkflowStep('ready');
-                        }}
-                        className="font-bold text-xs"
-                      >
-                        PRACTICE INTERVIEW <ArrowRight className="h-3.5 w-3.5 ml-1" />
-                      </Button>
-                    </div>
-                  </CardContent>
+                  </div>
                 </Card>
-              ))}
+
+                {/* Code Defense Snippets extracted */}
+                {projectKnowledge.codeDefenseSnippets.length > 0 && (
+                  <Card className="border border-slate-800 bg-slate-900/80 p-5 space-y-2">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Code2 className="w-4 h-4 text-emerald-400" />
+                      Code Defense Ready
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Extracted {projectKnowledge.codeDefenseSnippets.length} source functions to challenge your line-by-line understanding during the interview.
+                    </p>
+                  </Card>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-      </main>
+        {/* PHASE 4: ADAPTIVE INTERVIEW IN PROGRESS */}
+        {phase === 'interview' && session && currentQ && (
+          <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
+            {/* Top Progress & Status Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Question {currentQ.questionNumber} of {session.maxQuestions}
+                </span>
+                <Badge
+                  className={`text-xs ${
+                    currentQ.difficultyLevel === 1
+                      ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                      : currentQ.difficultyLevel === 2
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : currentQ.difficultyLevel === 3
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                  }`}
+                >
+                  Level {currentQ.difficultyLevel} • {currentQ.difficultyLabel}
+                </Badge>
+                <Badge variant="outline" className="border-slate-700 text-slate-300 text-xs">
+                  {currentQ.category}
+                </Badge>
+                {currentRecord?.isFollowUp && (
+                  <Badge className="bg-red-500/10 text-red-400 border-red-500/20 text-xs">
+                    Follow-Up Question
+                  </Badge>
+                )}
+              </div>
 
-      {/* Footer */}
-      <footer className="border-t py-6 bg-card text-center text-xs text-muted-foreground mt-12">
-        <div className="container mx-auto px-4">
-          <p>© 2026 IT Career Hub • RAG AI Project Interview Preparation Engine</p>
-        </div>
-      </footer>
+              <div className="w-full sm:w-48">
+                <Progress
+                  value={((currentQ.questionNumber - 1) / session.maxQuestions) * 100}
+                  className="h-2 bg-slate-800"
+                />
+              </div>
+            </div>
+
+            {/* Question Display Card */}
+            <Card className="border border-slate-800 bg-slate-900/90 shadow-2xl p-6 space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-blue-400 flex items-center gap-1.5">
+                    <Bot className="w-4 h-4" />
+                    AI Technical Interviewer
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowEvidence(!showEvidence)}
+                    className="text-slate-400 hover:text-white text-xs h-7 gap-1"
+                  >
+                    <Info className="w-3.5 h-3.5 text-blue-400" />
+                    Why was this question asked?
+                    {showEvidence ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+
+                <h2 className="text-xl sm:text-2xl font-semibold text-white leading-relaxed">
+                  {currentQ.question}
+                </h2>
+              </div>
+
+              {/* Evidence Reference Drawer */}
+              {showEvidence && (
+                <div className="p-3.5 bg-blue-950/30 border border-blue-800/40 rounded-lg text-xs space-y-1 text-slate-300 animate-in fade-in duration-200">
+                  <p className="font-semibold text-blue-300 flex items-center gap-1.5">
+                    <FolderGit2 className="w-3.5 h-3.5" />
+                    Evidence Reference from your Repository:
+                  </p>
+                  <p className="text-slate-300">{currentQ.reasonWhyAsked}</p>
+                  <div className="flex flex-wrap gap-1 pt-1 font-mono text-[11px] text-blue-400">
+                    {currentQ.evidenceFiles.map((f, i) => (
+                      <span key={i} className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* CODE DEFENSE SNIPPET BOX (If present in question) */}
+              {currentQ.codeSnippet && (
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-950 px-3 py-2 rounded-t-lg border border-b-0 border-slate-800">
+                    <span className="font-mono text-emerald-400 flex items-center gap-1.5">
+                      <Code2 className="w-4 h-4" />
+                      {currentQ.codeSnippet.filePath} (lines {currentQ.codeSnippet.startLine}-{currentQ.codeSnippet.endLine})
+                    </span>
+                    <Badge variant="outline" className="border-slate-800 text-[10px] uppercase text-slate-400">
+                      {currentQ.codeSnippet.language}
+                    </Badge>
+                  </div>
+                  <pre className="p-4 bg-slate-950 border border-slate-800 rounded-b-lg overflow-x-auto text-xs font-mono text-slate-200 leading-relaxed max-h-72">
+                    <code>{currentQ.codeSnippet.code}</code>
+                  </pre>
+                </div>
+              )}
+            </Card>
+
+            {/* Answer Submission Card */}
+            <Card className="border border-slate-800 bg-slate-900/90 shadow-xl p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold text-white flex items-center gap-2">
+                  <User className="w-4 h-4 text-emerald-400" />
+                  Your Technical Explanation & Defense
+                </label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant={isRecording ? "destructive" : "outline"}
+                    size="sm"
+                    onClick={toggleSpeechToText}
+                    className="h-8 text-xs gap-1.5 border-slate-700 bg-slate-950"
+                  >
+                    {isRecording ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-blue-400" />}
+                    {isRecording ? "Stop Dictation" : "Voice Answer"}
+                  </Button>
+                  {typedAnswer && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTypedAnswer('')}
+                      className="text-slate-500 hover:text-slate-300 text-xs h-8"
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <Textarea
+                rows={6}
+                value={typedAnswer}
+                onChange={(e) => setTypedAnswer(e.target.value)}
+                placeholder="Explain the technical mechanics, architecture flow, and rationale based on your code..."
+                className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600 focus-visible:ring-blue-500 text-sm leading-relaxed"
+              />
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <span className="text-xs text-slate-500">
+                  {typedAnswer.trim().split(/\s+/).filter(Boolean).length} words • Evaluated against repository truth
+                </span>
+                <Button
+                  onClick={handleSubmitAnswer}
+                  disabled={submittingAnswer || !typedAnswer.trim()}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 h-11 gap-2 shadow-lg shadow-blue-600/30"
+                >
+                  {submittingAnswer ? (
+                    <>
+                      <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      Evaluating against Repository...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Submit Answer
+                    </>
+                  )}
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* EVALUATION FEEDBACK MODAL / INLINE DRAWER */}
+        <Dialog open={showEvaluationModal} onOpenChange={setShowEvaluationModal}>
+          <DialogContent className="max-w-2xl bg-slate-900 border-slate-800 text-white p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <div className="flex items-center justify-between">
+                <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-xs">
+                  Answer Evaluation
+                </Badge>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">Score:</span>
+                  <span className={`text-xl font-bold ${
+                    (latestEvaluation?.overallScore || 0) >= 75
+                      ? 'text-emerald-400'
+                      : (latestEvaluation?.overallScore || 0) >= 55
+                      ? 'text-blue-400'
+                      : 'text-amber-400'
+                  }`}>
+                    {latestEvaluation?.overallScore || 0}/100
+                  </span>
+                </div>
+              </div>
+              <DialogTitle className="text-lg font-bold text-white">
+                Technical Feedback
+              </DialogTitle>
+            </DialogHeader>
+
+            {/* Contradiction Warning Alert */}
+            {latestEvaluation?.contradictionAlert?.hasContradiction && (
+              <div className="p-4 bg-amber-950/40 border border-amber-600/60 rounded-lg text-amber-200 text-xs space-y-1.5">
+                <div className="flex items-center gap-2 font-bold text-amber-300">
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  Repository Discrepancy Detected
+                </div>
+                <p className="text-amber-200/90 leading-relaxed">
+                  {latestEvaluation.contradictionAlert.politeInquiry}
+                </p>
+                <div className="text-[11px] text-amber-400/80 pt-1">
+                  Claimed: <span className="underline">{latestEvaluation.contradictionAlert.candidateClaim}</span> vs Repository Reality: <span className="font-mono text-white">{latestEvaluation.contradictionAlert.actualRepositoryFact}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Evaluation Breakdown Metrics */}
+            <div className="grid grid-cols-3 gap-2 py-2 text-center text-xs">
+              <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                <span className="text-slate-500 block">Correctness</span>
+                <strong className="text-white text-sm">{latestEvaluation?.technicalCorrectness || 0}%</strong>
+              </div>
+              <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                <span className="text-slate-500 block">Project Depth</span>
+                <strong className="text-white text-sm">{latestEvaluation?.projectUnderstanding || 0}%</strong>
+              </div>
+              <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                <span className="text-slate-500 block">Code Match</span>
+                <strong className="text-white text-sm">{latestEvaluation?.codeMatch || 0}%</strong>
+              </div>
+            </div>
+
+            {/* Coach Feedback Text */}
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-slate-400">Interviewer Assessment:</span>
+              <p className="text-sm text-slate-300 bg-slate-950 p-3 rounded-lg border border-slate-800 leading-relaxed">
+                {latestEvaluation?.feedback}
+              </p>
+            </div>
+
+            {/* Strengths & Missing Concepts */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="space-y-1">
+                <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Strengths
+                </span>
+                <ul className="list-disc list-inside text-slate-300 space-y-0.5">
+                  {latestEvaluation?.strengths.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              </div>
+
+              {latestEvaluation?.missingConcepts && latestEvaluation.missingConcepts.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-amber-400 font-semibold flex items-center gap-1">
+                    <Lightbulb className="w-3.5 h-3.5" /> Missing Concepts
+                  </span>
+                  <ul className="list-disc list-inside text-slate-300 space-y-0.5">
+                    {latestEvaluation.missingConcepts.map((m, i) => (
+                      <li key={i}>{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Next Action Button */}
+            <Button
+              onClick={handleProceedToNextQuestion}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium h-11 mt-2"
+            >
+              {session?.status === 'COMPLETED' ? "View Final Assessment Report" : "Proceed to Next Question →"}
+            </Button>
+          </DialogContent>
+        </Dialog>
+
+        {/* PHASE 5: FINAL PROJECT KNOWLEDGE ASSESSMENT REPORT */}
+        {phase === 'report' && finalReport && (
+          <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-300">
+            {/* Header / Score Banner */}
+            <Card className="border border-slate-800 bg-gradient-to-r from-slate-900 via-blue-950/40 to-slate-900 p-6 sm:p-8 space-y-6">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                <div className="space-y-2 text-center sm:text-left">
+                  <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-xs">
+                    Project Knowledge Assessment Report
+                  </Badge>
+                  <h1 className="text-2xl sm:text-4xl font-extrabold text-white">
+                    {finalReport.projectName}
+                  </h1>
+                  <p className="text-xs text-slate-400">
+                    Conducted on {new Date(finalReport.generatedAt).toLocaleDateString()} • {finalReport.totalQuestions} Questions Evaluated
+                  </p>
+                </div>
+
+                {/* Big Score Ring */}
+                <div className="flex items-center gap-6">
+                  <div className="text-center">
+                    <div className="text-4xl sm:text-5xl font-extrabold text-blue-400 tracking-tight">
+                      {finalReport.overallScore}%
+                    </div>
+                    <span className="text-xs text-slate-400 uppercase font-semibold tracking-wider">Overall Score</span>
+                  </div>
+
+                  <div className="text-center border-l border-slate-800 pl-6">
+                    <Badge
+                      className={`text-sm px-3 py-1 font-bold ${
+                        finalReport.ownershipConfidence.level === 'HIGH'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : finalReport.ownershipConfidence.level === 'MEDIUM'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-red-500/20 text-red-300 border-red-500/40'
+                      }`}
+                    >
+                      {finalReport.ownershipConfidence.level} CONFIDENCE
+                    </Badge>
+                    <span className="text-xs text-slate-400 block mt-1">Ownership Trust</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ownership Confidence Rationale Box */}
+              <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-lg space-y-1.5 text-xs">
+                <strong className="text-slate-200 block text-sm">Ownership Assessment Rationale:</strong>
+                <p className="text-slate-300 leading-relaxed">
+                  {finalReport.ownershipConfidence.rationale}
+                </p>
+                {finalReport.contradictionsDetected.length > 0 && (
+                  <div className="pt-1 text-amber-400 font-medium">
+                    ⚠️ {finalReport.contradictionsDetected.length} contradiction(s) noted during technical defense.
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {/* 10-DIMENSIONAL KNOWLEDGE MAP */}
+            <Card className="border border-slate-800 bg-slate-900/80 p-6 space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <BarChart2 className="w-5 h-5 text-blue-400" />
+                    Multi-Dimensional Knowledge Map
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Breakdown of technical understanding across 10 architectural competencies.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                {finalReport.knowledgeDimensions.map((dim, idx) => (
+                  <div key={idx} className="space-y-1.5 bg-slate-950 p-3 rounded-lg border border-slate-800/80">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-200">{dim.category}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                          dim.rating === 'Strong'
+                            ? 'bg-emerald-950 text-emerald-400'
+                            : dim.rating === 'Proficient'
+                            ? 'bg-blue-950 text-blue-400'
+                            : dim.rating === 'Developing'
+                            ? 'bg-amber-950 text-amber-400'
+                            : 'bg-red-950 text-red-400'
+                        }`}>
+                          {dim.rating}
+                        </span>
+                        <span className="font-mono text-slate-400 font-bold">{dim.percentage}%</span>
+                      </div>
+                    </div>
+                    <Progress value={dim.percentage} className="h-1.5 bg-slate-800" />
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Strong vs Weak Areas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card className="border border-slate-800 bg-slate-900/80 p-6 space-y-3">
+                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> Strong Competency Areas
+                </h3>
+                <ul className="space-y-2 text-xs text-slate-300">
+                  {finalReport.strongAreas.map((area, idx) => (
+                    <li key={idx} className="flex items-center gap-2 bg-slate-950 p-2.5 rounded border border-slate-800">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      <span>{area}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              <Card className="border border-slate-800 bg-slate-900/80 p-6 space-y-3">
+                <h3 className="text-sm font-bold text-amber-400 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" /> Areas Requiring Focus
+                </h3>
+                <ul className="space-y-2 text-xs text-slate-300">
+                  {finalReport.weakAreas.map((area, idx) => (
+                    <li key={idx} className="flex items-center gap-2 bg-slate-950 p-2.5 rounded border border-slate-800">
+                      <span className="h-2 w-2 rounded-full bg-amber-400" />
+                      <span>{area}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+
+            {/* PERSONALIZED LEARNING ROADMAP */}
+            <Card className="border border-slate-800 bg-slate-900/80 p-6 space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-indigo-400" />
+                  Personalized Study Roadmap & Preparation Guide
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Targeted topics derived directly from weak areas identified during your project interview.
+                </p>
+              </div>
+
+              <div className="space-y-4 pt-2">
+                {finalReport.recommendedLearning.map((topic) => (
+                  <div
+                    key={topic.priority}
+                    className="p-4 bg-slate-950 rounded-lg border border-slate-800 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-blue-600 text-white text-xs font-bold">
+                          Priority {topic.priority}
+                        </Badge>
+                        <h4 className="font-semibold text-sm text-white">{topic.topic}</h4>
+                      </div>
+                      <Badge variant="outline" className="border-slate-800 text-[11px] text-slate-400">
+                        {topic.category}
+                      </Badge>
+                    </div>
+
+                    <p className="text-xs text-slate-400">
+                      <strong className="text-slate-300">Why prepare:</strong> {topic.whyPrepare}
+                    </p>
+
+                    <p className="text-xs text-slate-300 bg-slate-900/80 p-2 rounded border border-slate-800/80">
+                      <strong className="text-blue-400">Study Guide:</strong> {topic.studyGuide}
+                    </p>
+
+                    <div className="space-y-1 pt-1">
+                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                        Sample Technical Questions to Practice:
+                      </span>
+                      <ul className="list-disc list-inside text-xs text-slate-300 space-y-1">
+                        {topic.practiceQuestions.map((q, idx) => (
+                          <li key={idx} className="italic text-slate-300">"{q}"</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Bottom Actions */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800">
+              <Button
+                variant="outline"
+                onClick={() => setPhase('input')}
+                className="w-full sm:w-auto border-slate-700 bg-slate-900 hover:bg-slate-800 text-white"
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Analyze Another Repository
+              </Button>
+
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <Button
+                  onClick={handleStartInterview}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-medium"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Retake Interview (Higher Difficulty)
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

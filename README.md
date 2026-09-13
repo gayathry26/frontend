@@ -5,7 +5,7 @@ VIEW SITE: [IT HUB](https://it-career-explorer-n5en-8kaaixun9-ebinesh25s-project
 ## Getting Started
 
 First, run the development server:
-
++-
 ```bash
 npm run dev
 # or
