@@ -1,6 +1,6 @@
-# IT Career Explorer — Backend Architecture & MongoDB Atlas Data Hub
+# IT Career Explorer — Backend Architecture & PostgreSQL Data Hub
 
-This directory contains the entire backend implementation powering the **IT Career Explorer** website using **MongoDB Atlas** with live, continuously updateable data.
+This directory contains the entire backend implementation powering the **IT Career Explorer** website using **PostgreSQL** with connection pooling, relational tables, transactions, JSONB indexing, and live updateable data.
 
 ---
 
@@ -9,16 +9,26 @@ This directory contains the entire backend implementation powering the **IT Care
 ```text
 backend/
 ├── config/
-│   └── mongodb.ts           # Reusable MongoDB Atlas connection singleton
-├── models/ / types/
-│   └── role.ts              # TypeScript schemas (ITRole, ContributionDocument, RoleVersionDocument)
+│   └── postgres.ts          # Reusable PostgreSQL connection pool singleton (pg.Pool)
+├── db/
+│   ├── schema.sql           # Canonical PostgreSQL relational DDL schema
+│   └── initDb.ts            # Schema initializer & table verification script
+├── types/
+│   ├── role.ts              # TypeScript schemas (ITRole, ContributionDocument, RoleVersionDocument)
+│   └── event.ts             # Event, Workshop, Hackathon, and sync schemas
 ├── validations/
 │   └── roleSchemas.ts       # Zod validation schemas for input validation
 ├── services/
-│   ├── roleService.ts       # Core MongoDB CRUD operations, text search, versioning
-│   └── contributionService.ts # IT Professional submission, approval, rejection, version history
+│   ├── roleService.ts       # Core PostgreSQL CRUD operations, parameterized search, versioning
+│   ├── eventService.ts      # Event filtering, full-text search, role-matching, and upserting
+│   ├── companyService.ts    # Companies catalog & discovery
+│   ├── contributionService.ts # IT Professional submission, approval, rejection, version history
+│   ├── auditService.ts      # Administrative audit logging
+│   └── automationPipelineService.ts # Ingestion pipelines, hashing, and source tracking
 ├── scripts/
-│   └── seedRoles.ts         # Database seed & index migration script
+│   ├── seedRoles.ts         # Database seed script for roles
+│   ├── seedEvents.ts        # Database seed script for verified events
+│   └── syncEvents.ts        # Ingestion synchronization script
 └── README.md                # Backend documentation
 ```
 
@@ -29,35 +39,40 @@ backend/
 Stored in `.env.local`:
 
 ```env
-MONGODB_URI=mongodb+srv://gayathry2610_db_user:oZQ1e9OonRdPcCQq@techrole.xldw3h7.mongodb.net/?appName=TECHROLE
-MONGODB_DB_NAME=TECHROLES
+# PostgreSQL Database Connection
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/techroles_db
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=techroles_db
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_SSL=false
 ```
 
 ---
 
-## Core Database Collections
+## Core Database Tables
 
-1. **`roles`**: Contains all public, approved IT career roles.
-2. **`contributions`**: Stores live submissions from IT professionals awaiting admin review (`pending`, `approved`, `rejected`).
-3. **`role_versions`**: Audit trail storing version snapshots whenever a role is updated.
-
----
-
-## API Endpoints
-
-* `GET /api/roles`: List all roles from MongoDB Atlas (supports `query`, `category`, `tags`).
-* `GET /api/roles/[slug]`: Fetch single role document by slug.
-* `POST /api/contributions`: Public submission endpoint for IT professionals.
-* `GET /api/contributions`: Admin endpoint to list submissions.
-* `POST /api/admin/contributions/[id]/approve`: Approve submission and publish live to MongoDB Atlas.
-* `POST /api/admin/contributions/[id]/reject`: Reject submission.
+1. **`roles`**: Contains all public, approved IT career roles with JSONB arrays/objects for deep career data.
+2. **`role_versions`**: Audit trail storing version snapshots whenever a role is updated.
+3. **`contributions`**: Stores live submissions from IT professionals awaiting admin review (`pending`, `approved`, `rejected`).
+4. **`events`**: Ingested and curated hackathons, CTFs, workshops, and student opportunities with GIN index on career roles.
+5. **`companies`**: Curated tech companies and hiring metadata.
+6. **`audit_logs`**: System-wide administrative action logs.
+7. **`role_update_logs`**: Detailed diff and automation logs per role update.
+8. **`interview_sessions`** & **`projects`**: Student interview analysis, assessment questions, and generated reports.
 
 ---
 
-## Running Seed Operations
-
-To seed or re-seed roles into your MongoDB Atlas database:
+## Database Management Commands
 
 ```bash
-npx tsx backend/scripts/seedRoles.ts
+# Initialize PostgreSQL schema (creates tables, indexes, constraints)
+npm run db:init
+
+# Seed roles into PostgreSQL
+npm run seed:roles
+
+# Seed verified student events into PostgreSQL
+npm run seed:events
 ```

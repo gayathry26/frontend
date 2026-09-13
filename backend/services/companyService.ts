@@ -1,4 +1,4 @@
-import { getDb } from '../config/mongodb';
+import { query, isPostgresConfigured } from '../config/postgres';
 
 export interface CompanyItem {
   id: string;
@@ -160,24 +160,35 @@ export const INITIAL_COMPANIES: CompanyItem[] = [
   }
 ];
 
+function mapRowToCompanyItem(row: any): CompanyItem {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type || 'Other',
+    industries: Array.isArray(row.industries) ? row.industries : (typeof row.industries === 'string' ? JSON.parse(row.industries) : []),
+    domains: Array.isArray(row.domains) ? row.domains : (typeof row.domains === 'string' ? JSON.parse(row.domains) : []),
+    technologies: Array.isArray(row.technologies) ? row.technologies : (typeof row.technologies === 'string' ? JSON.parse(row.technologies) : []),
+    locations: Array.isArray(row.locations) ? row.locations : (typeof row.locations === 'string' ? JSON.parse(row.locations) : []),
+    website: row.website || '',
+    description: row.description || '',
+    relatedRoles: Array.isArray(row.related_roles) ? row.related_roles : (typeof row.related_roles === 'string' ? JSON.parse(row.related_roles) : [])
+  };
+}
+
 export async function getAllCompaniesFromDb(): Promise<CompanyItem[]> {
   try {
-    const db = await getDb();
-    const collection = db.collection<CompanyItem>('companies');
-    const companies = await collection.find({}).toArray();
-
-    if (companies.length === 0) {
-      // Seed initial companies into MongoDB Atlas
-      await collection.insertMany(INITIAL_COMPANIES as any);
+    if (!isPostgresConfigured()) {
       return INITIAL_COMPANIES;
     }
 
-    return companies.map(c => {
-      const { _id, ...rest } = c as any;
-      return rest as CompanyItem;
-    });
+    const res = await query(`SELECT * FROM companies ORDER BY name ASC;`);
+    if (res.rows.length === 0) {
+      return INITIAL_COMPANIES;
+    }
+
+    return res.rows.map(mapRowToCompanyItem);
   } catch (err) {
-    console.error('Error fetching companies from MongoDB Atlas:', err);
+    console.error('Error fetching companies from PostgreSQL:', err);
     return INITIAL_COMPANIES;
   }
 }

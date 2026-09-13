@@ -1,12 +1,12 @@
-import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
 import path from 'path';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 dotenv.config();
 
-const uri = process.env.MONGODB_URI;
-const dbName = process.env.MONGODB_DB_NAME || 'TECHROLES';
+import { pool } from '../config/postgres';
+import { upsertEvent } from '../services/eventService';
+import { EventDocument } from '../types/event';
 
 const seedEventsList = [
   // 1. TAMIL NADU HACKATHON — Real Unstop Link
@@ -168,57 +168,28 @@ const seedEventsList = [
 ];
 
 async function seedEvents() {
-  if (!uri) {
-    console.error('❌ MONGODB_URI is not set');
-    process.exit(1);
-  }
-
-  console.log(`🔌 Connecting to MongoDB Atlas: ${uri.split('@')[1] || 'local'}`);
-  const client = new MongoClient(uri);
+  console.log(`🔌 Connecting to PostgreSQL database...`);
 
   try {
-    await client.connect();
-    const db = client.db(dbName);
-    const collection = db.collection('events');
+    console.log(`🚀 Seeding ${seedEventsList.length} Indian student opportunities with VERIFIED URLs into PostgreSQL 'events' table...`);
 
-    console.log('📦 Creating MongoDB database indexes for events...');
-    await collection.createIndex({ slug: 1 }, { unique: true });
-    await collection.createIndex({ type: 1 });
-    await collection.createIndex({ status: 1 });
-    await collection.createIndex({ 'location.state': 1 });
-    await collection.createIndex({ 'location.city': 1 });
-    await collection.createIndex({ 'location.mode': 1 });
-    await collection.createIndex({ 'dates.registrationDeadline': 1 });
-
-    console.log(`🚀 Seeding ${seedEventsList.length} Indian student opportunities with VERIFIED URLs into collection '${dbName}.events'...`);
-
-    const now = new Date().toISOString();
     let successCount = 0;
 
     for (const evt of seedEventsList) {
-      await collection.updateOne(
-        { slug: evt.slug },
-        {
-          $set: {
-            ...evt,
-            lastSyncedAt: now,
-            createdAt: now,
-            updatedAt: now
-          }
-        },
-        { upsert: true }
-      );
+      await upsertEvent(evt as unknown as EventDocument);
       successCount++;
       console.log(`  ✓ Seeded Event: ${evt.title} (Registration Available: ${evt.registrationAvailable})`);
     }
 
     console.log(`\n🎉 Seed Completed Successfully!`);
+    console.log(`  Total events seeded/updated: ${successCount}`);
 
   } catch (error: any) {
     console.error('❌ Seed operation failed:', error);
   } finally {
-    await client.close();
+    await pool.end();
   }
 }
 
 seedEvents();
+

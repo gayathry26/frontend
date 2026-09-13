@@ -1,7 +1,7 @@
 import { VectorChunkRecord, searchSimilar } from './vectorStoreService';
 import { generateQueryEmbedding } from './embeddingService';
 import { ProjectProfile, ProjectClaim } from './projectAnalysisService';
-import { getDb, isMongoConfigured } from '../config/mongodb';
+import { query, isPostgresConfigured } from '../config/postgres';
 
 export type InterviewMode = 'QUICK' | 'FULL' | 'DEEP_TECHNICAL' | 'PROJECT_DEFENSE' | 'WEAKNESS_PRACTICE';
 
@@ -379,14 +379,11 @@ export async function generateFinalReport(sessionId: string): Promise<RAGIntervi
 
   let session: RAGInterviewSession | null = memoryMap.get(sessionId) || null;
 
-  if (!session && isMongoConfigured()) {
+  if (!session && isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const col = db.collection<RAGInterviewSession>('interview_sessions');
-      const doc = await col.findOne({ sessionId });
-      if (doc) {
-        const { _id, ...rest } = doc as any;
-        session = rest as RAGInterviewSession;
+      const res = await query(`SELECT data FROM interview_sessions WHERE session_id = $1 LIMIT 1;`, [sessionId]);
+      if (res.rows.length > 0) {
+        session = typeof res.rows[0].data === 'string' ? JSON.parse(res.rows[0].data) : res.rows[0].data;
       }
     } catch {}
   }
@@ -484,11 +481,16 @@ export async function generateFinalReport(sessionId: string): Promise<RAGIntervi
   memoryMap.set(sessionId, session);
   (global as any)._ragSessionsMap = memoryMap;
 
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const col = db.collection('interview_sessions');
-      await col.updateOne({ sessionId }, { $set: session }, { upsert: true });
+      await query(`
+        INSERT INTO interview_sessions (session_id, data, status, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (session_id) DO UPDATE SET
+          data = EXCLUDED.data,
+          status = EXCLUDED.status,
+          updated_at = NOW();
+      `, [sessionId, JSON.stringify(session), session.status]);
     } catch {}
   }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionById } from '@/backend/interview/adaptiveInterviewEngine';
 import { generateAssessmentReport } from '@/backend/reports/assessmentReport';
-import { getDb, isMongoConfigured } from '@/backend/config/mongodb';
+import { query, isPostgresConfigured } from '@/backend/config/postgres';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,12 +16,11 @@ export async function GET(req: Request) {
 
     let session = getSessionById(sessionId);
 
-    if (!session && isMongoConfigured()) {
+    if (!session && isPostgresConfigured()) {
       try {
-        const db = await getDb();
-        const doc = await db.collection('adaptive_interview_sessions').findOne({ sessionId });
-        if (doc) {
-          session = doc as any;
+        const res = await query(`SELECT data FROM adaptive_interview_sessions WHERE session_id = $1 LIMIT 1;`, [sessionId]);
+        if (res.rows.length > 0) {
+          session = typeof res.rows[0].data === 'string' ? JSON.parse(res.rows[0].data) : res.rows[0].data;
         }
       } catch {}
     }

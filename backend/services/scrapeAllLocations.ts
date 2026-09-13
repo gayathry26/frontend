@@ -19,7 +19,7 @@ if (fs.existsSync(envLocalPath)) {
 
 import { runGoogleMapsSearch } from './mapsScrapeService';
 import { CURATED_IT_COMPANIES, DiscoveredCompany } from './companyDiscoveryService';
-import { getDb } from '../config/mongodb';
+import { query, isPostgresConfigured } from '../config/postgres';
 
 const TARGET_LOCATIONS = [
   'Coimbatore',
@@ -110,14 +110,10 @@ function inferRelatedRoles(type: string, query: string): string[] {
 }
 
 async function run() {
-  let dbCollection: any = null;
-
-  try {
-    const db = await getDb();
-    dbCollection = db.collection('companies');
-    console.log('✓ Connected to MongoDB. Saving records live to database.');
-  } catch (err: any) {
-    console.warn('⚠️ MongoDB is not active (ECONNREFUSED). Falling back to src/data/companies.json.');
+  if (isPostgresConfigured()) {
+    console.log('✓ PostgreSQL configured. Saving records live to database.');
+  } else {
+    console.warn('⚠️ PostgreSQL is not configured. Falling back to src/data/companies.json.');
   }
 
   // Load existing file backup if present to avoid overwriting previously scraped companies
@@ -138,9 +134,35 @@ async function run() {
   const seenIds = new Set(allDiscovered.map(c => c.id));
 
   // Seed initial curated if DB is available
-  if (dbCollection) {
+  if (isPostgresConfigured()) {
     for (const curated of CURATED_IT_COMPANIES) {
-      await dbCollection.updateOne({ id: curated.id }, { $set: curated }, { upsert: true }).catch(() => null);
+      await query(`
+        INSERT INTO companies (
+          id, name, slug, logo, website, description, industry,
+          company_type, size, location, locations, address, coordinates,
+          hiring, startup, related_roles, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW()
+        )
+        ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
+      `, [
+        curated.id,
+        curated.name,
+        curated.id,
+        null,
+        curated.website || null,
+        curated.description,
+        'Technology',
+        curated.type,
+        '50-500',
+        curated.address.city,
+        JSON.stringify([curated.address.city]),
+        JSON.stringify(curated.address),
+        JSON.stringify(curated.coordinates),
+        curated.hiring,
+        curated.startup,
+        JSON.stringify(curated.relatedRoles)
+      ]).catch(() => null);
     }
   }
 
@@ -149,12 +171,12 @@ async function run() {
     console.log(`Starting Scraping for: ${location}`);
     console.log(`========================================\n`);
 
-    for (const query of SEARCH_QUERIES) {
-      console.log(`[Running Scraper] Query: "${query}" in "${location}"...`);
+    for (const searchQuery of SEARCH_QUERIES) {
+      console.log(`[Running Scraper] Query: "${searchQuery}" in "${location}"...`);
 
       try {
         const scrapeResult = await runGoogleMapsSearch({
-          query,
+          query: searchQuery,
           location,
           max_results: 50,
           timeout_ms: 60000 // 60s to allow scrolling for 50 records
@@ -167,16 +189,16 @@ async function run() {
 
           // Filter out repair centers, retail stores, and computer hardware shops
           const cat = (place.category || '').toLowerCase();
-          if (IGNORED_CATEGORIES.some(bad => cat.includes(bad))) {
+          if (IGNORED_CATEGORIES.some(ic => cat.includes(ic))) {
             continue;
           }
 
           const cleanId = place.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + `-${location.toLowerCase()}`;
           if (seenIds.has(cleanId)) continue;
 
-          const inferredType = inferCompanyType(place.name, place.category || '', query);
-          const inferredTech = inferTechnologies(place.name, query);
-          const inferredRoles = inferRelatedRoles(inferredType, query);
+          const inferredType = inferCompanyType(place.name, place.category || '', searchQuery);
+          const inferredTech = inferTechnologies(place.name, searchQuery);
+          const inferredRoles = inferRelatedRoles(inferredType, searchQuery);
 
           const formattedCompany: DiscoveredCompany = {
             id: cleanId,
@@ -204,12 +226,47 @@ async function run() {
             relatedRoles: inferredRoles
           };
 
-          if (dbCollection) {
-            await dbCollection.updateOne(
-              { id: formattedCompany.id },
-              { $set: formattedCompany },
-              { upsert: true }
-            ).catch(() => null);
+          if (isPostgresConfigured()) {
+            await query(`
+              INSERT INTO companies (
+                id, name, slug, logo, website, description, industry,
+                company_type, size, location, locations, address, coordinates,
+                hiring, startup, related_roles, updated_at
+              ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW()
+              )
+              ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                industry = EXCLUDED.industry,
+                company_type = EXCLUDED.company_type,
+                size = EXCLUDED.size,
+                location = EXCLUDED.location,
+                locations = EXCLUDED.locations,
+                address = EXCLUDED.address,
+                coordinates = EXCLUDED.coordinates,
+                hiring = EXCLUDED.hiring,
+                startup = EXCLUDED.startup,
+                related_roles = EXCLUDED.related_roles,
+                updated_at = NOW();
+            `, [
+              formattedCompany.id,
+              formattedCompany.name,
+              formattedCompany.id,
+              null,
+              formattedCompany.website || null,
+              formattedCompany.description,
+              formattedCompany.industries[0] || 'Software',
+              formattedCompany.type,
+              '50-500',
+              formattedCompany.address.city,
+              JSON.stringify([formattedCompany.address.city]),
+              JSON.stringify(formattedCompany.address),
+              JSON.stringify(formattedCompany.coordinates),
+              formattedCompany.hiring,
+              formattedCompany.startup,
+              JSON.stringify(formattedCompany.relatedRoles)
+            ]).catch(() => null);
           }
 
           allDiscovered.push(formattedCompany);
@@ -217,7 +274,7 @@ async function run() {
           console.log(`✓ Added: ${formattedCompany.name}`);
         }
       } catch (err: any) {
-        console.error(`Error scraping "${query}" in ${location}:`, err.message);
+        console.error(`Error scraping "${searchQuery}" in ${location}:`, err.message);
       }
     }
   }

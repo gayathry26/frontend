@@ -1,12 +1,10 @@
-import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
 import path from 'path';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 dotenv.config();
 
-const uri = process.env.MONGODB_URI?.trim();
-const dbName = (process.env.MONGODB_DB_NAME || 'TECHROLES').trim();
+import { query, pool } from '../config/postgres';
 
 const BLOCKED_PATTERNS = [
   'example.com',
@@ -24,20 +22,10 @@ const BLOCKED_PATTERNS = [
 ];
 
 async function cleanInvalidUrls() {
-  if (!uri) {
-    console.error('❌ MONGODB_URI is not set');
-    process.exit(1);
-  }
-
-  console.log(`🔌 Connecting to MongoDB Atlas database '${dbName}'...`);
-  const client = new MongoClient(uri, { tlsInsecure: true });
+  console.log(`🔌 Connecting to PostgreSQL database...`);
 
   try {
-    await client.connect();
-    const db = client.db(dbName);
-    const collection = db.collection('events');
-
-    const allEvents = await collection.find({}).toArray();
+    const { rows: allEvents } = await query(`SELECT id, title, "registrationUrl", "registrationAvailable", source FROM events;`);
     console.log(`🔍 Scanning ${allEvents.length} event documents for invalid/placeholder URLs...`);
 
     let scrubbedCount = 0;
@@ -51,22 +39,29 @@ async function cleanInvalidUrls() {
         isBadReg = true;
       }
 
-      const sourceUrl = evt.source?.sourceUrl || '';
+      const sourceObj = typeof evt.source === 'object' && evt.source !== null ? evt.source : {};
+      const sourceUrl = sourceObj.sourceUrl || '';
       if (BLOCKED_PATTERNS.some(pat => sourceUrl.toLowerCase().includes(pat))) {
         isBadSource = true;
       }
 
       if (isBadReg || isBadSource) {
-        await collection.updateOne(
-          { _id: evt._id },
-          {
-            $set: {
-              registrationUrl: isBadReg ? null : evt.registrationUrl,
-              registrationAvailable: isBadReg ? false : (evt.registrationAvailable ?? true),
-              'source.sourceUrl': isBadSource ? null : evt.source?.sourceUrl,
-              updatedAt: new Date().toISOString()
-            }
-          }
+        const newSource = { ...sourceObj };
+        if (isBadSource) newSource.sourceUrl = null;
+
+        await query(
+          `UPDATE events
+           SET "registrationUrl" = $1,
+               "registrationAvailable" = $2,
+               source = $3,
+               "updatedAt" = NOW()
+           WHERE id = $4`,
+          [
+            isBadReg ? null : evt.registrationUrl,
+            isBadReg ? false : (evt.registrationAvailable ?? true),
+            JSON.stringify(newSource),
+            evt.id
+          ]
         );
         scrubbedCount++;
         console.log(`  ✓ Scrubbed invalid URL from Event: ${evt.title}`);
@@ -80,8 +75,9 @@ async function cleanInvalidUrls() {
   } catch (error: any) {
     console.error('❌ Scrub operation failed:', error);
   } finally {
-    await client.close();
+    await pool.end();
   }
 }
 
 cleanInvalidUrls();
+

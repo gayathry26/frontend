@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, isMongoConfigured } from '@/backend/config/mongodb';
+import { query, isPostgresConfigured } from '@/backend/config/postgres';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 /**
  * GET /api/admin/automation/monitor
- * Returns automation statistics, active source configs, and update audit history logs.
+ * Returns automation statistics, active source configs, and update audit history logs from PostgreSQL.
  */
 export async function GET(req: NextRequest) {
   try {
-    if (!isMongoConfigured()) {
+    if (!isPostgresConfigured()) {
       return NextResponse.json({
         success: true,
         stats: {
@@ -27,14 +27,29 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const db = await getDb();
-    const logsCollection = db.collection('role_update_logs');
+    const res = await query(`
+      SELECT * FROM role_update_logs
+      ORDER BY detected_at DESC
+      LIMIT 50;
+    `);
 
-    const updateLogs = await logsCollection
-      .find({})
-      .sort({ detectedAt: -1 })
-      .limit(50)
-      .toArray();
+    const updateLogs = res.rows.map(r => ({
+      _id: String(r.id),
+      roleId: r.role_id,
+      roleTitle: r.role_title,
+      category: r.category,
+      changeType: r.change_type,
+      addedTechnicalSkills: typeof r.added_technical_skills === 'string' ? JSON.parse(r.added_technical_skills) : (r.added_technical_skills || []),
+      addedSoftSkills: typeof r.added_soft_skills === 'string' ? JSON.parse(r.added_soft_skills) : (r.added_soft_skills || []),
+      addedTools: typeof r.added_tools === 'string' ? JSON.parse(r.added_tools) : (r.added_tools || []),
+      sourceName: r.source_name,
+      sourceUrl: r.source_url,
+      confidence: r.confidence,
+      status: r.status,
+      contentHash: r.content_hash,
+      reason: r.reason,
+      detectedAt: r.detected_at ? new Date(r.detected_at).toISOString() : new Date().toISOString()
+    }));
 
     const stats = {
       lastRun: updateLogs.length > 0 ? updateLogs[0].detectedAt : new Date().toISOString(),

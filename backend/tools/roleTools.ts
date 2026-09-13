@@ -1,7 +1,7 @@
 /**
  * Dedicated Backend Tool / Function Execution Service for Admin AI Chatbot
  *
- * Implements the 12 explicit backend tools for MongoDB Atlas operations:
+ * Implements the 12 explicit backend tools for PostgreSQL operations:
  *   1. createRole
  *   2. addTechnicalSkill
  *   3. removeTechnicalSkill
@@ -16,13 +16,13 @@
  *  12. compareRoles
  *
  * Security & Data Integrity Rules:
- *  - Gemini can ONLY select tool names and parameters. Gemini NEVER directly accesses MongoDB.
- *  - All write operations perform post-update verification by re-querying MongoDB Atlas.
+ *  - Gemini can ONLY select tool names and parameters. Gemini NEVER directly accesses PostgreSQL.
+ *  - All write operations perform post-update verification by re-querying PostgreSQL.
  *  - Writes record an audit log in `TECHROLES.audit_logs`.
  *  - Next.js cache revalidation ensures persistent updates across browser refreshes.
  */
 
-import { getDb } from '../config/mongodb';
+import { query } from '../config/postgres';
 import { ITRole } from '../types/role';
 import { resolveRoleFromQuery, ResolutionResponse } from '../services/roleResolverService';
 import { getAllRolesFromDb, upsertRoleInDb, deleteRoleInDb } from '../services/roleService';
@@ -67,13 +67,21 @@ async function recordAuditLog(log: {
   performedBy?: string;
 }): Promise<void> {
   try {
-    const db = await getDb();
-    await db.collection('audit_logs').insertOne({
-      ...log,
-      performedBy: log.performedBy || 'admin',
-      timestamp: new Date().toISOString(),
-      status: 'VERIFIED'
-    });
+    await query(`
+      INSERT INTO audit_logs (
+        admin_id, action, role_id, role_name, field,
+        old_value, new_value, performed_by, timestamp, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), 'VERIFIED');
+    `, [
+      log.performedBy || 'admin',
+      log.action,
+      log.roleId,
+      log.roleName || null,
+      log.field || null,
+      JSON.stringify(log.oldValue ?? null),
+      JSON.stringify(log.newValue ?? null),
+      log.performedBy || 'admin'
+    ]);
   } catch (err: any) {
     console.warn('[AuditLog] Failed to write audit record:', err.message);
   }
@@ -111,7 +119,7 @@ export async function createRoleTool(params: {
       success: false,
       action: 'createRole',
       status: 'INVALID_INPUT',
-      message: `A role with the name '${title}' already exists in MongoDB Atlas.`
+      message: `A role with the name '${title}' already exists in PostgreSQL.`
     };
   }
 
@@ -149,7 +157,7 @@ export async function createRoleTool(params: {
     success: true,
     action: 'createRole',
     status: 'SUCCESS',
-    message: `Successfully created role '${title}' under category '${category}' in MongoDB Atlas.`,
+    message: `Successfully created role '${title}' under category '${category}' in PostgreSQL.`,
     data: newRole,
     verified: Boolean(verified)
   };
@@ -171,7 +179,7 @@ export async function updateRoleSkillsTool(params: {
       success: false,
       action: 'updateRoleSkills',
       status: 'AMBIGUOUS',
-      message: `I found multiple matching roles in MongoDB Atlas for '${params.roleQuery}'. Which one do you mean?`,
+      message: `I found multiple matching roles in PostgreSQL for '${params.roleQuery}'. Which one do you mean?`,
       matches: resolution.candidates.map(c => c.role)
     };
   }
@@ -182,7 +190,7 @@ export async function updateRoleSkillsTool(params: {
       success: false,
       action: 'updateRoleSkills',
       status: 'NOT_FOUND',
-      message: `I couldn't find a role matching '${params.roleQuery}' in MongoDB Atlas.`
+      message: `I couldn't find a role matching '${params.roleQuery}' in PostgreSQL.`
     };
   }
 
@@ -203,7 +211,7 @@ export async function updateRoleSkillsTool(params: {
 
   await upsertRoleInDb(updatedRole, 'admin');
 
-  // Verify MongoDB Atlas state
+  // Verify PostgreSQL state
   const verifiedRole = await getAllRolesFromDb().then(roles => roles.find(r => r.id === role.id));
   const techVerified = techToAdd.every(t => verifiedRole?.technicalSkills?.includes(t));
   const softVerified = softToAdd.every(s => verifiedRole?.softSkills?.includes(s));
@@ -221,7 +229,7 @@ export async function updateRoleSkillsTool(params: {
     success: true,
     action: 'updateRoleSkills',
     status: 'SUCCESS',
-    message: `Updated technical skills (+${techToAdd.length}) and soft skills (+${softToAdd.length}) for '${role.title}' in MongoDB Atlas.`,
+    message: `Updated technical skills (+${techToAdd.length}) and soft skills (+${softToAdd.length}) for '${role.title}' in PostgreSQL.`,
     data: updatedRole,
     verified: Boolean(techVerified && softVerified)
   };
@@ -242,7 +250,7 @@ export async function addTechnicalSkillTool(params: {
       success: false,
       action: 'addTechnicalSkill',
       status: 'AMBIGUOUS',
-      message: `I found multiple matching roles in MongoDB Atlas for '${params.roleQuery}'. Which one do you mean?`,
+      message: `I found multiple matching roles in PostgreSQL for '${params.roleQuery}'. Which one do you mean?`,
       matches: resolution.candidates.map(c => c.role)
     };
   }
@@ -253,7 +261,7 @@ export async function addTechnicalSkillTool(params: {
       success: false,
       action: 'addTechnicalSkill',
       status: 'NOT_FOUND',
-      message: `I couldn't find a role matching '${params.roleQuery}' in MongoDB Atlas.`
+      message: `I couldn't find a role matching '${params.roleQuery}' in PostgreSQL.`
     };
   }
 
@@ -280,7 +288,7 @@ export async function addTechnicalSkillTool(params: {
     success: true,
     action: 'addTechnicalSkill',
     status: 'SUCCESS',
-    message: `Added technical skill(s) [${skillsToAdd.join(', ')}] to '${role.title}' in MongoDB Atlas.`,
+    message: `Added technical skill(s) [${skillsToAdd.join(', ')}] to '${role.title}' in PostgreSQL.`,
     data: updatedRole,
     verified: true
   };
@@ -312,7 +320,7 @@ export async function removeTechnicalSkillTool(params: {
       success: false,
       action: 'removeTechnicalSkill',
       status: 'NOT_FOUND',
-      message: `I couldn't find a role matching '${params.roleQuery}' in MongoDB Atlas.`
+      message: `I couldn't find a role matching '${params.roleQuery}' in PostgreSQL.`
     };
   }
 
@@ -339,7 +347,7 @@ export async function removeTechnicalSkillTool(params: {
     success: true,
     action: 'removeTechnicalSkill',
     status: 'SUCCESS',
-    message: `Removed technical skill(s) [${skillsToRemove.join(', ')}] from '${role.title}' in MongoDB Atlas.`,
+    message: `Removed technical skill(s) [${skillsToRemove.join(', ')}] from '${role.title}' in PostgreSQL.`,
     data: updatedRole,
     verified: true
   };
@@ -371,7 +379,7 @@ export async function addSoftSkillTool(params: {
       success: false,
       action: 'addSoftSkill',
       status: 'NOT_FOUND',
-      message: `I couldn't find a role matching '${params.roleQuery}' in MongoDB Atlas.`
+      message: `I couldn't find a role matching '${params.roleQuery}' in PostgreSQL.`
     };
   }
 
@@ -398,7 +406,7 @@ export async function addSoftSkillTool(params: {
     success: true,
     action: 'addSoftSkill',
     status: 'SUCCESS',
-    message: `Added soft skill(s) [${skillsToAdd.join(', ')}] to '${role.title}' in MongoDB Atlas.`,
+    message: `Added soft skill(s) [${skillsToAdd.join(', ')}] to '${role.title}' in PostgreSQL.`,
     data: updatedRole,
     verified: true
   };
@@ -430,7 +438,7 @@ export async function removeSoftSkillTool(params: {
       success: false,
       action: 'removeSoftSkill',
       status: 'NOT_FOUND',
-      message: `I couldn't find a role matching '${params.roleQuery}' in MongoDB Atlas.`
+      message: `I couldn't find a role matching '${params.roleQuery}' in PostgreSQL.`
     };
   }
 
@@ -457,7 +465,7 @@ export async function removeSoftSkillTool(params: {
     success: true,
     action: 'removeSoftSkill',
     status: 'SUCCESS',
-    message: `Removed soft skill(s) [${skillsToRemove.join(', ')}] from '${role.title}' in MongoDB Atlas.`,
+    message: `Removed soft skill(s) [${skillsToRemove.join(', ')}] from '${role.title}' in PostgreSQL.`,
     data: updatedRole,
     verified: true
   };
@@ -499,7 +507,7 @@ export async function updateRoleFieldTool(params: {
       success: false,
       action: 'updateRoleField',
       status: 'NOT_FOUND',
-      message: `I couldn't find a role matching '${params.roleQuery}' in MongoDB Atlas.`
+      message: `I couldn't find a role matching '${params.roleQuery}' in PostgreSQL.`
     };
   }
 
@@ -528,7 +536,7 @@ export async function updateRoleFieldTool(params: {
     success: true,
     action: 'updateRoleField',
     status: 'SUCCESS',
-    message: `Updated field '${fieldKey}' on '${role.title}' to '${JSON.stringify(params.value)}' in MongoDB Atlas.`,
+    message: `Updated field '${fieldKey}' on '${role.title}' to '${JSON.stringify(params.value)}' in PostgreSQL.`,
     data: updatedRole,
     verified: true
   };
@@ -559,7 +567,7 @@ export async function deleteRoleTool(params: {
       success: false,
       action: 'deleteRole',
       status: 'NOT_FOUND',
-      message: `I couldn't find a role matching '${params.roleQuery}' in MongoDB Atlas.`
+      message: `I couldn't find a role matching '${params.roleQuery}' in PostgreSQL.`
     };
   }
 
@@ -574,7 +582,7 @@ export async function deleteRoleTool(params: {
     success: true,
     action: 'deleteRole',
     status: 'SUCCESS',
-    message: `Role '${role.title}' has been deleted from MongoDB Atlas.`,
+    message: `Role '${role.title}' has been deleted from PostgreSQL.`,
     data: role,
     verified: true
   };
@@ -594,7 +602,7 @@ export async function getRoleTool(params: {
       success: false,
       action: 'getRole',
       status: 'NOT_FOUND',
-      message: `I couldn't find a role matching '${params.roleQuery}' in MongoDB Atlas.`
+      message: `I couldn't find a role matching '${params.roleQuery}' in PostgreSQL.`
     };
   }
 
@@ -602,7 +610,7 @@ export async function getRoleTool(params: {
     success: true,
     action: 'getRole',
     status: 'SUCCESS',
-    message: `Retrieved details for '${resolution.selectedRole.title}' from MongoDB Atlas.`,
+    message: `Retrieved details for '${resolution.selectedRole.title}' from PostgreSQL.`,
     data: resolution.selectedRole
   };
 }
@@ -643,7 +651,7 @@ export async function searchRolesTool(params: {
     success: true,
     action: 'searchRoles',
     status: 'SUCCESS',
-    message: `Found ${results.length} role(s) matching your query in MongoDB Atlas.`,
+    message: `Found ${results.length} role(s) matching your query in PostgreSQL.`,
     data: results
   };
 }
@@ -665,7 +673,7 @@ export async function listRolesTool(params?: {
     success: true,
     action: 'listRoles',
     status: 'SUCCESS',
-    message: `Listing ${results.length} role(s) under category '${params?.category || 'All Categories'}' from MongoDB Atlas.`,
+    message: `Listing ${results.length} role(s) under category '${params?.category || 'All Categories'}' from PostgreSQL.`,
     data: results
   };
 }
@@ -676,17 +684,27 @@ export async function listRolesTool(params?: {
 export async function countRolesTool(params?: {
   category?: string;
 }): Promise<ToolResult<{ count: number; category?: string }>> {
-  const db = await getDb();
-  const query = params?.category ? { category: { $regex: params.category, $options: 'i' } } : {};
-  const count = await db.collection('roles').countDocuments(query);
+  try {
+    const res = params?.category
+      ? await query(`SELECT COUNT(*) as count FROM roles WHERE status != 'archived' AND category ILIKE $1;`, [`%${params.category}%`])
+      : await query(`SELECT COUNT(*) as count FROM roles WHERE status != 'archived';`);
+    const count = parseInt(res.rows[0]?.count || '0', 10);
 
-  return {
-    success: true,
-    action: 'countRoles',
-    status: 'SUCCESS',
-    message: `Found ${count} role(s) in MongoDB Atlas${params?.category ? ` under '${params.category}'` : ''}.`,
-    data: { count, category: params?.category }
-  };
+    return {
+      success: true,
+      action: 'countRoles',
+      status: 'SUCCESS',
+      message: `Found ${count} role(s) in PostgreSQL${params?.category ? ` under '${params.category}'` : ''}.`,
+      data: { count, category: params?.category }
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      action: 'countRoles',
+      status: 'ERROR',
+      message: err.message
+    };
+  }
 }
 
 // ----------------------------------------------------------------------
@@ -709,7 +727,7 @@ export async function compareRolesTool(params: {
     success: true,
     action: 'compareRoles',
     status: 'SUCCESS',
-    message: `Compared ${matchedRoles.length} role(s) from MongoDB Atlas.`,
+    message: `Compared ${matchedRoles.length} role(s) from PostgreSQL.`,
     data: matchedRoles
   };
 }

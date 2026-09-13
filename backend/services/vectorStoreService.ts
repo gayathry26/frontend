@@ -1,4 +1,4 @@
-import { getDb, isMongoConfigured } from '../config/mongodb';
+import { query, isPostgresConfigured } from '../config/postgres';
 import { DocumentChunk } from './documentService';
 
 export interface VectorChunkRecord extends DocumentChunk {
@@ -12,7 +12,6 @@ const memoryVectorStore = new Map<string, VectorChunkRecord[]>();
 function cosineSimilarity(vecA: number[], vecB: number[]): number {
   if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) return 0;
 
-  // Handle dimensional mismatch if fallback vs API embeddings mix
   const minDim = Math.min(vecA.length, vecB.length);
   let dotProduct = 0;
   let normA = 0;
@@ -40,17 +39,25 @@ export async function addDocuments(chunks: DocumentChunk[], embeddings: number[]
   // Store in memory
   memoryVectorStore.set(projectId, records);
 
-  // Store in MongoDB if configured
-  if (isMongoConfigured()) {
+  // Store in PostgreSQL if configured
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const collection = db.collection<VectorChunkRecord>('document_chunks');
-      await collection.deleteMany({ projectId });
-      if (records.length > 0) {
-        await collection.insertMany(records as any);
+      await query(`DELETE FROM document_chunks WHERE project_id = $1;`, [projectId]);
+      for (const rec of records) {
+        await query(`
+          INSERT INTO document_chunks (chunk_id, project_id, file_path, content, embedding, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6);
+        `, [
+          rec.chunkId,
+          rec.projectId,
+          rec.source || null,
+          rec.text,
+          JSON.stringify(rec.embedding),
+          rec.createdAt
+        ]);
       }
-    } catch (err) {
-      console.warn('Failed to insert vector chunks into MongoDB, using memory store:', err);
+    } catch (err: any) {
+      console.warn('Failed to insert vector chunks into PostgreSQL, using memory store:', err.message);
     }
   }
 }
@@ -62,12 +69,29 @@ export async function searchSimilar(
 ): Promise<VectorChunkRecord[]> {
   let chunksToSearch: VectorChunkRecord[] = [];
 
-  // Try fetching from MongoDB first
-  if (isMongoConfigured()) {
+  // Try fetching from PostgreSQL first
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const collection = db.collection<VectorChunkRecord>('document_chunks');
-      chunksToSearch = await collection.find({ projectId }).toArray() as any;
+      const res = await query(`SELECT * FROM document_chunks WHERE project_id = $1;`, [projectId]);
+      if (res.rows.length > 0) {
+        chunksToSearch = res.rows.map(r => ({
+          chunkId: r.chunk_id || `chunk_${r.id}`,
+          projectId: r.project_id,
+          section: 'Documentation',
+          source: r.file_path || 'README.md',
+          text: r.content || '',
+          metadata: {
+            charCount: (r.content || '').length,
+            wordCount: (r.content || '').split(/\s+/).length,
+            hasCode: false,
+            level: 1
+          },
+          embedding: typeof r.embedding === 'string' ? JSON.parse(r.embedding) : (r.embedding || []),
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString()
+        }));
+      } else {
+        chunksToSearch = memoryVectorStore.get(projectId) || [];
+      }
     } catch (err) {
       chunksToSearch = memoryVectorStore.get(projectId) || [];
     }
@@ -76,7 +100,6 @@ export async function searchSimilar(
   }
 
   if (chunksToSearch.length === 0) {
-    // Return any stored chunks across projects if specific project has no chunks
     for (const list of Array.from(memoryVectorStore.values())) {
       chunksToSearch.push(...list);
     }
@@ -93,22 +116,18 @@ export async function searchSimilar(
 
 export async function deleteProjectDocuments(projectId: string): Promise<void> {
   memoryVectorStore.delete(projectId);
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const collection = db.collection('document_chunks');
-      await collection.deleteMany({ projectId });
+      await query(`DELETE FROM document_chunks WHERE project_id = $1;`, [projectId]);
     } catch {}
   }
 }
 
 export async function clearIndex(): Promise<void> {
   memoryVectorStore.clear();
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const collection = db.collection('document_chunks');
-      await collection.deleteMany({});
+      await query(`DELETE FROM document_chunks;`);
     } catch {}
   }
 }

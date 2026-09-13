@@ -1,14 +1,14 @@
 /**
  * One-time cleanup API endpoint: GET /api/admin/fix-generic-urls
  *
- * Finds all events in MongoDB whose registrationUrl is a generic platform
+ * Finds all events in PostgreSQL whose registrationUrl is a generic platform
  * homepage or listing page and marks them registrationAvailable: false.
  *
- * This endpoint is ADMIN-ONLY and temporary. Remove it after use.
+ * This endpoint is ADMIN-ONLY.
  */
 
 import { NextResponse } from 'next/server';
-import { getDb, isMongoConfigured } from '@/backend/config/mongodb';
+import { query, isPostgresConfigured } from '@/backend/config/postgres';
 import { isPlaceholderUrl } from '@/backend/utils/validateEventUrl';
 
 const KNOWN_GENERIC_URLS = new Set([
@@ -39,16 +39,13 @@ const KNOWN_GENERIC_URLS = new Set([
 ]);
 
 export async function GET() {
-  if (!isMongoConfigured()) {
-    return NextResponse.json({ error: 'MongoDB not configured' }, { status: 503 });
+  if (!isPostgresConfigured()) {
+    return NextResponse.json({ error: 'PostgreSQL not configured' }, { status: 503 });
   }
 
-  const db = await getDb();
-  const collection = db.collection('events');
-
-  const allEvents = await collection.find({
-    registrationUrl: { $nin: [null, ''] }
-  }).toArray();
+  const { rows: allEvents } = await query(
+    `SELECT id, title, "registrationUrl", status FROM events WHERE "registrationUrl" IS NOT NULL AND "registrationUrl" != ''`
+  );
 
   const fixed: string[] = [];
   const clean: string[] = [];
@@ -63,16 +60,15 @@ export async function GET() {
 
     if (isGeneric) {
       try {
-        await collection.updateOne(
-          { _id: event._id },
-          {
-            $set: {
-              registrationUrl: null,
-              registrationAvailable: false,
-              status: event.status === 'EXPIRED' ? 'EXPIRED' : 'PENDING_REVIEW',
-              updatedAt: new Date().toISOString()
-            }
-          }
+        const newStatus = event.status === 'EXPIRED' ? 'EXPIRED' : 'PENDING_REVIEW';
+        await query(
+          `UPDATE events
+           SET "registrationUrl" = NULL,
+               "registrationAvailable" = false,
+               status = $1,
+               "updatedAt" = NOW()
+           WHERE id = $2`,
+          [newStatus, event.id]
         );
         fixed.push(`${event.title} (was: ${url})`);
       } catch (err: any) {

@@ -1,4 +1,4 @@
-import { getDb, isMongoConfigured } from '../config/mongodb';
+import { query, isPostgresConfigured } from '../config/postgres';
 import { calculateContentHash } from './normalizationService';
 import { extractRoleInfoWithGroq, GroqExtractionResult } from './groqExtractionService';
 import { resolveRoleDeterministically } from './roleMatcherService';
@@ -9,10 +9,10 @@ import { revalidatePath } from 'next/cache';
 export interface SourceConfig {
   id: string;
   name: string;
-  type: 'RSS' | 'API' | 'BLOG';
+  type?: 'RSS' | 'API' | 'BLOG';
   url: string;
   enabled: boolean;
-  priority: number;
+  priority?: number;
 }
 
 export interface PipelineExecutionSummary {
@@ -20,12 +20,12 @@ export interface PipelineExecutionSummary {
   sourcesFailed: number;
   newRolesDetected: number;
   updatedRoles: number;
-  mongoUpdatesApplied: number;
+  mongoUpdatesApplied: number; // kept for backwards compatibility with frontends
   notificationsSent: number;
   updateLogs: any[];
 }
 
-const DEFAULT_TRUSTED_SOURCES: SourceConfig[] = [
+export const DEFAULT_TRUSTED_SOURCES: SourceConfig[] = [
   { id: 'src-aws-tech', name: 'AWS Architecture Blog', type: 'RSS', url: 'https://aws.amazon.com/blogs/architecture/feed/', enabled: true, priority: 1 },
   { id: 'src-google-dev', name: 'Google Developers Blog', type: 'RSS', url: 'https://developers.googleblog.com/feeds/posts/default', enabled: true, priority: 1 },
   { id: 'src-microsoft-eng', name: 'Microsoft Engineering Blog', type: 'RSS', url: 'https://devblogs.microsoft.com/feed/', enabled: true, priority: 2 }
@@ -43,18 +43,24 @@ export async function runAutomationPipeline(options?: { forceRun?: boolean; auto
     updateLogs: []
   };
 
-  if (!isMongoConfigured()) {
-    console.warn('MongoDB is unconfigured. Running in dry-run verification mode.');
+  const isConfigured = isPostgresConfigured();
+  if (!isConfigured) {
+    console.warn('PostgreSQL is unconfigured. Running in dry-run verification mode.');
   }
-
-  const db = isMongoConfigured() ? await getDb() : null;
 
   // 1. Fetch Sources
   let sources = DEFAULT_TRUSTED_SOURCES;
-  if (db) {
+  if (isConfigured) {
     try {
-      const dbSources = await db.collection<SourceConfig>('source_configs').find({ enabled: true }).toArray();
-      if (dbSources.length > 0) sources = dbSources;
+      const res = await query(`SELECT id, name, url, enabled FROM source_configs WHERE enabled = true;`);
+      if (res.rows.length > 0) {
+        sources = res.rows.map(r => ({
+          id: r.id,
+          name: r.name,
+          url: r.url,
+          enabled: r.enabled
+        }));
+      }
     } catch {}
   }
 
@@ -68,9 +74,9 @@ export async function runAutomationPipeline(options?: { forceRun?: boolean; auto
       const contentHash = calculateContentHash(sourceTitle + mockText);
 
       // Check duplicate content hash
-      if (db && !options?.forceRun) {
-        const existingHash = await db.collection('source_content_hashes').findOne({ contentHash });
-        if (existingHash) {
+      if (isConfigured && !options?.forceRun) {
+        const hashRes = await query(`SELECT 1 FROM source_content_hashes WHERE content_hash = $1 LIMIT 1;`, [contentHash]);
+        if (hashRes.rows.length > 0) {
           console.log(`⏭️ Skipping duplicate content from ${src.name} (Hash matched).`);
           continue;
         }
@@ -85,8 +91,8 @@ export async function runAutomationPipeline(options?: { forceRun?: boolean; auto
 
       // 3. Resolve Role
       const roleMatch = await resolveRoleDeterministically(extraction.role.title);
-      let targetRole = roleMatch.matchedRole;
-      let targetSlug = targetRole ? targetRole.id : extraction.role.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const targetRole = roleMatch.matchedRole;
+      const targetSlug = targetRole ? targetRole.id : extraction.role.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
       // 4. Compare Skills & Tools
       const existingTech = new Set(targetRole?.technicalSkills || []);
@@ -108,7 +114,7 @@ export async function runAutomationPipeline(options?: { forceRun?: boolean; auto
       else summary.updatedRoles++;
 
       // 5. Apply Safe Atomic Update
-      if (status === 'APPLIED' && targetRole && isMongoConfigured()) {
+      if (status === 'APPLIED' && targetRole && isConfigured) {
         for (const tech of addedTech) {
           await addSkillToRoleInDb(targetSlug, 'technicalSkills', tech);
         }
@@ -120,7 +126,6 @@ export async function runAutomationPipeline(options?: { forceRun?: boolean; auto
 
       // 6. Record Update Log
       const nowStr = new Date().toISOString();
-      const dateFormatted = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
       const logDoc = {
         roleId: targetSlug,
@@ -139,16 +144,42 @@ export async function runAutomationPipeline(options?: { forceRun?: boolean; auto
         reason: extraction.reason
       };
 
-      if (db) {
-        await db.collection('role_update_logs').insertOne(logDoc);
-        await db.collection('source_content_hashes').insertOne({ contentHash, createdAt: nowStr });
+      if (isConfigured) {
+        await query(`
+          INSERT INTO role_update_logs (
+            role_id, role_title, category, change_type, added_technical_skills,
+            added_soft_skills, added_tools, source_name, source_url, confidence,
+            status, content_hash, reason, detected_at, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14);
+        `, [
+          logDoc.roleId,
+          logDoc.roleTitle,
+          logDoc.category,
+          logDoc.changeType,
+          JSON.stringify(logDoc.addedTechnicalSkills),
+          JSON.stringify(logDoc.addedSoftSkills),
+          JSON.stringify(logDoc.addedTools),
+          logDoc.sourceName,
+          logDoc.sourceUrl,
+          logDoc.confidence,
+          logDoc.status,
+          logDoc.contentHash,
+          logDoc.reason,
+          logDoc.detectedAt
+        ]);
+
+        await query(`
+          INSERT INTO source_content_hashes (content_hash, created_at)
+          VALUES ($1, $2)
+          ON CONFLICT (content_hash) DO NOTHING;
+        `, [contentHash, nowStr]);
       }
 
       summary.updateLogs.push(logDoc);
 
-      // 7. Send Phone Notification (WhatsApp)
+      // 7. Send Notification
       if (status === 'APPLIED') {
-        const notifResult = await sendWhatsAppNotification({
+        await sendWhatsAppNotification({
           roleTitle: logDoc.roleTitle,
           category: logDoc.category,
           slug: targetSlug,
@@ -158,17 +189,21 @@ export async function runAutomationPipeline(options?: { forceRun?: boolean; auto
           sourceName: src.name,
           sourceUrl: src.url,
           confidence: extraction.confidence,
-          updatedAtDate: dateFormatted
+          updatedAtDate: new Date().toLocaleDateString('en-GB')
         });
-
-        if (notifResult.success) summary.notificationsSent++;
+        summary.notificationsSent++;
       }
-
     } catch (err: any) {
       console.error(`Error processing source ${src.name}:`, err.message);
       summary.sourcesFailed++;
     }
   }
+
+  try {
+    revalidatePath('/admin/data-management');
+    revalidatePath('/admin/roles');
+    revalidatePath('/roles');
+  } catch (e) {}
 
   return summary;
 }

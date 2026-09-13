@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { checkMongoHealth } from '@/backend/config/mongodb';
+import { checkPostgresHealth } from '@/backend/config/postgres';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const health = await checkMongoHealth();
+    const health = await checkPostgresHealth();
 
     if (!health.connected) {
       return NextResponse.json(
@@ -13,7 +13,7 @@ export async function GET() {
           success: false,
           connected: false,
           dbName: health.dbName,
-          error: health.error || 'MongoDB Atlas ping failed'
+          error: health.error || 'PostgreSQL ping failed'
         },
         { status: 503 }
       );

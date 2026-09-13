@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchAndProcessRepository, loadSampleRepository, SAMPLE_REPOSITORIES } from '@/backend/github/repositoryFetcher';
 import { buildProjectKnowledge } from '@/backend/analysis/projectKnowledgeBuilder';
 import { chunkSourceFiles } from '@/backend/rag/chunker';
-import { getDb, isMongoConfigured } from '@/backend/config/mongodb';
+import { query, isPostgresConfigured } from '@/backend/config/postgres';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,16 +85,28 @@ export async function POST(req: Request) {
     globalProjects.set(repoData.id, projectRecord);
     (global as any)._githubProjectsMap = globalProjects;
 
-    if (isMongoConfigured()) {
+    if (isPostgresConfigured()) {
       try {
-        const db = await getDb();
-        await db.collection('analyzed_github_repositories').updateOne(
-          { projectId: repoData.id },
-          { $set: { ...projectRecord, chunks: [] } }, // exclude heavy chunks from DB record
-          { upsert: true }
-        );
+        await query(`
+          INSERT INTO analyzed_github_repositories (project_id, name, url, project_knowledge, summary, metadata, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, NOW())
+          ON CONFLICT (project_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            url = EXCLUDED.url,
+            project_knowledge = EXCLUDED.project_knowledge,
+            summary = EXCLUDED.summary,
+            metadata = EXCLUDED.metadata,
+            updated_at = NOW();
+        `, [
+          repoData.id,
+          projectKnowledge.project,
+          projectKnowledge.url,
+          JSON.stringify(projectKnowledge),
+          repoData.summary || null,
+          JSON.stringify(repoData.metadata || {})
+        ]);
       } catch (e) {
-        console.warn('MongoDB save error:', e);
+        console.warn('PostgreSQL save error:', e);
       }
     }
 

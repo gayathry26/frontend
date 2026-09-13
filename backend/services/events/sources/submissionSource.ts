@@ -1,23 +1,18 @@
 /**
  * Organizer Submissions Source Adapter
  *
- * Reads approved organizer-submitted events from MongoDB Atlas (status: PENDING_REVIEW)
+ * Reads approved organizer-submitted events from PostgreSQL (status: PENDING_REVIEW)
  * and marks them for potential sync/inclusion in the public listing.
- *
- * This source does NOT call an external API — it reads from the local MongoDB collection.
  */
 
 import { EventSource, RawEvent, FetchResult } from './EventSource';
-import { getDb, isMongoConfigured } from '../../../config/mongodb';
-import { EventDocument } from '../../../types/event';
-
-const COLLECTION_NAME = 'events';
+import { query, isPostgresConfigured } from '../../../config/postgres';
 
 export class SubmissionSource implements EventSource {
   name = 'OrganizerSubmission';
 
   async isAvailable(): Promise<boolean> {
-    return isMongoConfigured();
+    return isPostgresConfigured();
   }
 
   async fetchEvents(): Promise<FetchResult> {
@@ -25,49 +20,51 @@ export class SubmissionSource implements EventSource {
     let error: string | null = null;
 
     try {
-      if (!isMongoConfigured()) {
-        return { events: [], fetchedCount: 0, error: 'MongoDB not configured' };
+      if (!isPostgresConfigured()) {
+        return { events: [], fetchedCount: 0, error: 'PostgreSQL not configured' };
       }
 
-      const db = await getDb();
-      const submissions = await db.collection<EventDocument>(COLLECTION_NAME)
-        .find({ status: 'PENDING_REVIEW' })
-        .sort({ createdAt: -1 })
-        .limit(200)
-        .toArray();
+      const res = await query(`
+        SELECT * FROM events
+        WHERE status = 'PENDING_REVIEW'
+        ORDER BY created_at DESC
+        LIMIT 200;
+      `);
 
-      for (const doc of submissions) {
+      for (const row of res.rows) {
+        const organizer = typeof row.organizer === 'string' ? JSON.parse(row.organizer) : (row.organizer || {});
+        const location = typeof row.location === 'string' ? JSON.parse(row.location) : (row.location || {});
+        const dates = typeof row.dates === 'string' ? JSON.parse(row.dates) : (row.dates || {});
+        const prize = typeof row.prize === 'string' ? JSON.parse(row.prize) : (row.prize || {});
+        const skills = Array.isArray(row.skills) ? row.skills : (typeof row.skills === 'string' ? JSON.parse(row.skills) : []);
+
         allEvents.push({
-          externalId: `submission-${doc._id?.toString() || Math.random().toString(36).slice(2)}`,
+          externalId: `submission-${row.id}`,
           platform: 'OrganizerSubmission',
-          title: doc.title,
-          description: doc.description || null,
-          organizerName: doc.organizer?.name || null,
-          organizerWebsite: doc.organizer?.website || null,
-          registrationDeadline: doc.dates?.registrationDeadline || null,
-          startDate: doc.dates?.startDate || null,
-          endDate: doc.dates?.endDate || null,
-          mode: doc.location?.mode || null,
-          country: doc.location?.country || null,
-          state: doc.location?.state || null,
-          city: doc.location?.city || null,
-          category: doc.type || null,
+          title: row.title,
+          description: row.description || null,
+          organizerName: organizer.name || null,
+          organizerWebsite: organizer.website || null,
+          registrationDeadline: dates.registrationDeadline || null,
+          startDate: dates.startDate || null,
+          endDate: dates.endDate || null,
+          mode: location.mode || null,
+          country: location.country || null,
+          state: location.state || null,
+          city: location.city || null,
+          category: row.type || null,
           tags: [],
-          skills: doc.skills || [],
-          prizeAmount: doc.prize?.amount ?? null,
-          prizeCurrency: doc.prize?.currency || null,
-          prizeDescription: doc.prize?.description || null,
-          registrationUrl: doc.registrationUrl || null,
-          sourceUrl: null,
-          eligibility: doc.eligibility || [],
-          rawPayload: doc as any
+          skills: skills,
+          prizeAmount: prize.amount ?? null,
+          prizeCurrency: prize.currency || null,
+          prizeDescription: prize.description || null,
+          registrationUrl: row.url || null,
+          sourceUrl: row.url || null,
+          rawPayload: row
         });
       }
-
-      console.log(`[SubmissionSource] Loaded ${allEvents.length} pending organizer submission(s) from MongoDB.`);
     } catch (err: any) {
-      error = `SubmissionSource error: ${err.message}`;
-      console.error(`[SubmissionSource] ${error}`);
+      error = err.message || 'Unknown error fetching submissions';
     }
 
     return {

@@ -16,12 +16,12 @@ import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 dotenv.config();
 
-import { getDb, isMongoConfigured } from '../config/mongodb';
+import { query, isPostgresConfigured } from '../config/postgres';
 import { getAllRolesFromDb } from '../services/roleService';
 
 async function runUnifiedAdminSuite() {
   console.log('\n' + '='.repeat(70));
-  console.log('  VERIFYING UNIFIED ADMIN SECTION PIPELINE & MONGODB ATLAS');
+  console.log('  VERIFYING UNIFIED ADMIN SECTION PIPELINE & POSTGRESQL');
   console.log('='.repeat(70) + '\n');
 
   let passed = 0;
@@ -40,24 +40,25 @@ async function runUnifiedAdminSuite() {
   }
 
   try {
-    // 1. Roles MongoDB Atlas Query
-    console.log('--- Step 1: Query Active Roles from MongoDB Atlas ---');
+    // 1. Roles PostgreSQL Query
+    console.log('--- Step 1: Query Active Roles from PostgreSQL ---');
     const roles = await getAllRolesFromDb();
     assertTest(
-      'Roles loaded directly from MongoDB Atlas',
+      'Roles loaded directly from PostgreSQL',
       roles.length > 0,
-      `Loaded ${roles.length} roles. Authority collection active.`
+      `Loaded ${roles.length} roles. Authority table active.`
     );
 
     // 2. Overview Stats Aggregation
     console.log('\n--- Step 2: Test Overview Stats Calculation ---');
-    if (isMongoConfigured()) {
-      const db = await getDb();
-      const oppsCount = await db.collection('events').countDocuments({});
-      const logsCount = await db.collection('role_update_logs').countDocuments({});
+    if (isPostgresConfigured()) {
+      const oppsRes = await query(`SELECT COUNT(*) as count FROM events;`);
+      const logsRes = await query(`SELECT COUNT(*) as count FROM role_update_logs;`);
+      const oppsCount = parseInt(oppsRes.rows[0]?.count || '0', 10);
+      const logsCount = parseInt(logsRes.rows[0]?.count || '0', 10);
 
       assertTest(
-        'MongoDB Atlas aggregated collection counts verified',
+        'PostgreSQL aggregated table counts verified',
         typeof oppsCount === 'number' && typeof logsCount === 'number',
         `Opportunities: ${oppsCount}, System Audit Logs: ${logsCount}`
       );
@@ -94,6 +95,7 @@ async function runUnifiedAdminSuite() {
   console.log('='.repeat(70) + '\n');
 
   if (failed > 0) process.exit(1);
+  process.exit(0);
 }
 
 runUnifiedAdminSuite();

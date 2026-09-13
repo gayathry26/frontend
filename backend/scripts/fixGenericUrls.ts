@@ -1,12 +1,9 @@
 /**
- * Cleanup Script: Fix Generic Platform URLs in MongoDB Atlas
+ * Cleanup Script: Fix Generic Platform URLs in PostgreSQL
  *
- * Finds all events in the `events` collection whose `registrationUrl` is a
+ * Finds all events in the `events` table whose `registrationUrl` is a
  * generic platform page (e.g. https://devfolio.co/hackathons, https://unstop.com/)
  * and marks them as registrationAvailable: false with status PENDING_REVIEW.
- *
- * This script does NOT invent replacement URLs — it only removes invalid ones.
- * An admin or re-sync must supply the real event-specific URL.
  *
  * Usage:
  *   npx tsx --env-file=.env.local backend/scripts/fixGenericUrls.ts
@@ -14,15 +11,12 @@
 
 import path from 'path';
 import { config } from 'dotenv';
-import { MongoClient } from 'mongodb';
 
 config({ path: path.resolve(process.cwd(), '.env.local'), override: false });
 config({ path: path.resolve(process.cwd(), '.env'), override: false });
 
+import { query, pool } from '../config/postgres';
 import { isPlaceholderUrl } from '../utils/validateEventUrl';
-
-const uri = process.env.MONGODB_URI;
-const dbName = process.env.MONGODB_DB_NAME || 'TECHROLES';
 
 const KNOWN_GENERIC_URLS = [
   'https://devfolio.co',
@@ -52,28 +46,17 @@ const KNOWN_GENERIC_URLS = [
 ];
 
 async function fixGenericUrls() {
-  if (!uri) {
-    console.error('❌ MONGODB_URI is not set');
-    process.exit(1);
-  }
-
   console.log('\n' + '='.repeat(60));
-  console.log('  Fix Generic Platform URLs — MongoDB Atlas Cleanup');
+  console.log('  Fix Generic Platform URLs — PostgreSQL Cleanup');
   console.log('='.repeat(60));
 
-  const client = new MongoClient(uri);
-
   try {
-    await client.connect();
-    const db = client.db(dbName);
-    const collection = db.collection('events');
-
     let fixed = 0;
     let alreadyClean = 0;
 
-    const allEvents = await collection.find({
-      registrationUrl: { $nin: [null, ''] }
-    }).toArray();
+    const { rows: allEvents } = await query(
+      `SELECT id, title, "registrationUrl", status FROM events WHERE "registrationUrl" IS NOT NULL AND "registrationUrl" != ''`
+    );
 
     console.log(`Scanning ${allEvents.length} events with registrationUrl...\n`);
 
@@ -84,22 +67,20 @@ async function fixGenericUrls() {
       const isGeneric = KNOWN_GENERIC_URLS.includes(url.trim()) || isPlaceholderUrl(url);
 
       if (isGeneric) {
-        await collection.updateOne(
-          { _id: event._id },
-          {
-            $set: {
-              registrationUrl: null,
-              registrationAvailable: false,
-              status: event.status === 'EXPIRED' ? 'EXPIRED' : 'PENDING_REVIEW',
-              updatedAt: new Date().toISOString(),
-              _urlFixNote: `Generic URL removed: ${url}`
-            }
-          }
+        const newStatus = event.status === 'EXPIRED' ? 'EXPIRED' : 'PENDING_REVIEW';
+        await query(
+          `UPDATE events
+           SET "registrationUrl" = NULL,
+               "registrationAvailable" = false,
+               status = $1,
+               "updatedAt" = NOW()
+           WHERE id = $2`,
+          [newStatus, event.id]
         );
 
         console.log(`  ✅ Fixed: "${event.title}"`);
         console.log(`     Was: ${url}`);
-        console.log(`     Now: null (registrationAvailable: false, status: PENDING_REVIEW)\n`);
+        console.log(`     Now: null (registrationAvailable: false, status: ${newStatus})\n`);
         fixed++;
       } else {
         alreadyClean++;
@@ -116,8 +97,9 @@ async function fixGenericUrls() {
   } catch (error: any) {
     console.error('❌ Cleanup failed:', error);
   } finally {
-    await client.close();
+    await pool.end();
   }
 }
 
 fixGenericUrls();
+

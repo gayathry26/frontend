@@ -1,8 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../backend/config/mongodb';
-import { CURATED_IT_COMPANIES, DiscoveredCompany } from '../../../../../backend/services/companyDiscoveryService';
+import { query, isPostgresConfigured } from '@/backend/config/postgres';
+import { CURATED_IT_COMPANIES, DiscoveredCompany } from '@/backend/services/companyDiscoveryService';
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+function mapRowToDiscoveredCompany(row: any): DiscoveredCompany {
+  return {
+    id: row.id,
+    name: row.name,
+    cin: row.cin || undefined,
+    type: row.type || 'Product',
+    categories: Array.isArray(row.categories) ? row.categories : (typeof row.categories === 'string' ? JSON.parse(row.categories) : []),
+    industries: Array.isArray(row.industries) ? row.industries : (typeof row.industries === 'string' ? JSON.parse(row.industries) : []),
+    technologies: Array.isArray(row.technologies) ? row.technologies : (typeof row.technologies === 'string' ? JSON.parse(row.technologies) : []),
+    description: row.description || '',
+    website: row.website || '',
+    email: row.email || undefined,
+    phone: row.phone || undefined,
+    address: typeof row.address === 'string' ? JSON.parse(row.address) : (row.address || { full: '', city: '', state: '', country: 'India' }),
+    coordinates: typeof row.coordinates === 'string' ? JSON.parse(row.coordinates) : (row.coordinates || undefined),
+    employeeCount: row.employee_count || undefined,
+    foundedYear: row.founded_year || undefined,
+    hiring: Boolean(row.hiring),
+    startup: Boolean(row.startup),
+    relatedRoles: Array.isArray(row.related_roles) ? row.related_roles : (typeof row.related_roles === 'string' ? JSON.parse(row.related_roles) : [])
+  };
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -15,77 +39,93 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
 
   try {
-    const db = await getDb();
-    const col = db.collection<DiscoveredCompany>('companies');
+    if (!isPostgresConfigured()) {
+      throw new Error('PostgreSQL is not configured');
+    }
 
     // 1. Stats calculation endpoint
     if (action === 'stats') {
-      const cityFilter: Record<string, any> = {};
+      const conditions: string[] = [];
+      const params: any[] = [];
       if (city && city.toLowerCase() !== 'all' && city.toLowerCase() !== 'india') {
-        cityFilter['address.city'] = new RegExp(`^${city}$`, 'i');
+        conditions.push(`address->>'city' ILIKE $1`);
+        params.push(city);
       }
 
-      const totalCompanies = await col.countDocuments(cityFilter);
-      const hiringCount = await col.countDocuments({ ...cityFilter, hiring: true });
-      const startupsCount = await col.countDocuments({ ...cityFilter, startup: true });
-      const productCount = await col.countDocuments({
-        ...cityFilter,
-        type: { $in: ['Product', 'SaaS', 'FinTech'] }
-      });
-      const serviceCount = await col.countDocuments({
-        ...cityFilter,
-        type: { $in: ['Service', 'Enterprise'] }
-      });
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const andClause = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
+
+      const statsRes = await query(`
+        SELECT
+          (SELECT COUNT(*) FROM companies ${whereClause}) as total,
+          (SELECT COUNT(*) FROM companies WHERE hiring = true ${andClause}) as hiring_count,
+          (SELECT COUNT(*) FROM companies WHERE startup = true ${andClause}) as startups_count,
+          (SELECT COUNT(*) FROM companies WHERE type IN ('Product', 'SaaS', 'FinTech') ${andClause}) as product_count,
+          (SELECT COUNT(*) FROM companies WHERE type IN ('Service', 'Enterprise') ${andClause}) as service_count;
+      `, params);
+
+      const s = statsRes.rows[0] || {};
 
       return NextResponse.json({
         success: true,
         city: city || 'India',
-        totalCompanies,
-        hiringCount,
-        startupsCount,
-        productCount,
-        serviceCount
+        totalCompanies: parseInt(s.total || '0', 10),
+        hiringCount: parseInt(s.hiring_count || '0', 10),
+        startupsCount: parseInt(s.startups_count || '0', 10),
+        productCount: parseInt(s.product_count || '0', 10),
+        serviceCount: parseInt(s.service_count || '0', 10)
       });
     }
 
     // 2. Query filters
-    const filter: Record<string, any> = {};
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let pIdx = 1;
 
     if (city && city.toLowerCase() !== 'all') {
-      filter['address.city'] = new RegExp(`^${city}$`, 'i');
+      conditions.push(`address->>'city' ILIKE $${pIdx++}`);
+      params.push(city);
     }
 
     if (type && type.toLowerCase() !== 'all') {
-      filter.type = new RegExp(`^${type}$`, 'i');
+      conditions.push(`type ILIKE $${pIdx++}`);
+      params.push(type);
     }
 
     if (hiring === 'true') {
-      filter.hiring = true;
+      conditions.push(`hiring = true`);
     }
 
     if (search) {
-      const searchRegex = new RegExp(search, 'i');
-      filter.$or = [
-        { name: searchRegex },
-        { description: searchRegex },
-        { 'address.full': searchRegex },
-        { 'address.area': searchRegex },
-        { technologies: { $in: [searchRegex] } },
-        { categories: { $in: [searchRegex] } }
-      ];
+      conditions.push(`(
+        name ILIKE $${pIdx} OR
+        description ILIKE $${pIdx} OR
+        address->>'full' ILIKE $${pIdx} OR
+        address->>'area' ILIKE $${pIdx} OR
+        technologies::text ILIKE $${pIdx} OR
+        categories::text ILIKE $${pIdx}
+      )`);
+      params.push(`%${search}%`);
+      pIdx++;
     }
 
-    const total = await col.countDocuments(filter);
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRes = await query(`SELECT COUNT(*) as total FROM companies ${where};`, params);
+    const total = parseInt(countRes.rows[0]?.total || '0', 10);
     const totalPages = Math.ceil(total / limit) || 1;
 
-    let companies = await col
-      .find(filter)
-      .project({ _id: 0 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .toArray();
+    const offset = (page - 1) * limit;
+    const companiesRes = await query(`
+      SELECT * FROM companies
+      ${where}
+      ORDER BY name ASC
+      LIMIT $${pIdx++} OFFSET $${pIdx++};
+    `, [...params, limit, offset]);
 
-    // Fallback to in-memory list if the MongoDB collection is empty
+    let companies = companiesRes.rows.map(mapRowToDiscoveredCompany);
+
+    // Fallback to in-memory curated list if table is empty
     if (companies.length === 0 && !search && (!city || city === 'all')) {
       companies = CURATED_IT_COMPANIES as any;
     }
@@ -99,9 +139,9 @@ export async function GET(req: NextRequest) {
       companies
     });
   } catch (error: any) {
-    console.error('MongoDB query failed, falling back to static list:', error);
+    console.error('PostgreSQL companies query failed, falling back to static list:', error.message);
 
-    // Fallback in-memory response when MongoDB is unreachable
+    // Fallback in-memory response
     if (action === 'stats') {
       let pool = [...CURATED_IT_COMPANIES];
       if (city && city.toLowerCase() !== 'all' && city.toLowerCase() !== 'india') {

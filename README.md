@@ -1,38 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# IT Career Explorer
 
-VIEW SITE: [IT HUB](https://it-career-explorer-n5en-8kaaixun9-ebinesh25s-projects.vercel.app/)
+A comprehensive career guidance and discovery platform for IT professionals and students, powered by Next.js and PostgreSQL.
+
+## Backend Database: PostgreSQL
+
+The application backend uses **PostgreSQL** as the primary and only database, featuring relational schemas, foreign keys, cascade deletes, JSONB fields with GIN indexes, connection pooling (`pg.Pool`), and atomic transactions.
+
+For detailed database architecture and setup instructions, see [POSTGRES_SETUP.md](./POSTGRES_SETUP.md).
 
 ## Getting Started
 
-First, run the development server:
-+-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+### 1. Configure Environment
+
+Create or update `.env.local` with your PostgreSQL database credentials:
+
+```env
+# PostgreSQL Database Connection
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/techroles_db
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=techroles_db
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_PORT=5432
+DB_SSL=false
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Initialize Database & Seed
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# 1. Initialize PostgreSQL schema (creates all 18 tables, indexes, constraints)
+npm run db:init
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# 2. Seed initial roles
+npm run seed:roles
 
-## Learn More
+# 3. Seed initial student opportunities & events
+npm run seed:events
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 3. Run Development Server
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open [http://localhost:3000](http://localhost:3000) with your browser.
 
-## Deploy on Vercel
+## Database Tables
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+* `roles` — Full IT career profiles (categories, technical & soft skills, certifications, roadmap, salaries)
+* `role_versions` — Audit history of role changes
+* `contributions` — Community submissions from IT professionals
+* `events` — Hackathons, workshops, and student opportunities with role matching
+* `companies` — IT company directory & hiring insights
+* `audit_logs` — System administration audit log
+* `role_update_logs` — Pipeline update diff logs
+* `interview_sessions` & `projects` — Project interview AI assessments
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

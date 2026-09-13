@@ -13,9 +13,10 @@
  *
  * Designed so that a single source failure NEVER prevents other sources from completing.
  */
-
-import { getDb, isMongoConfigured } from '../../config/mongodb';
 import { EventDocument } from '../../types/event';
+import { EventSource } from './sources/EventSource';
+import { query, isPostgresConfigured } from '../../config/postgres';
+import { upsertEvent } from '../eventService';
 
 import { BrabbleSource } from './sources/brabble';
 import { DevfolioSource } from './sources/devfolio';
@@ -27,11 +28,8 @@ import { normalizeRawEvent, isIndiaRelevant } from './eventNormalizer';
 import { deduplicateEvents, EventWithSources } from './eventDeduplicator';
 import { matchRolesForAllEvents } from './eventRoleMatcher';
 
-const EVENTS_COLLECTION = 'events';
-const SYNC_LOGS_COLLECTION = 'eventSyncLogs';
-
 // ---------------------------------------------------------------------------
-// Sync Report (returned to caller and stored in MongoDB)
+// Sync Report
 // ---------------------------------------------------------------------------
 
 export interface SyncReport {
@@ -56,90 +54,58 @@ export interface SyncReport {
 // Source Registry
 // ---------------------------------------------------------------------------
 
-function buildSourceRegistry() {
+export function getAllSources(): EventSource[] {
   return [
-    new BrabbleSource(),
     new DevfolioSource(),
+    new BrabbleSource(),
     new UnstopSource(),
     new HackerEarthSource(),
     new SubmissionSource()
   ];
 }
 
+export function buildSourceRegistry(): EventSource[] {
+  return getAllSources();
+}
+
 // ---------------------------------------------------------------------------
-// MongoDB Helpers
+// PostgreSQL Helpers
 // ---------------------------------------------------------------------------
 
 async function fetchAllRoles(): Promise<any[]> {
   try {
-    const db = await getDb();
-    const roles = await db.collection('roles')
-      .find({}, { projection: { id: 1, title: 1, category: 1, technicalSkills: 1 } })
-      .limit(500)
-      .toArray();
-    return roles;
+    const res = await query(`
+      SELECT id, title, category, technical_skills as "technicalSkills"
+      FROM roles
+      LIMIT 500;
+    `);
+    return res.rows;
   } catch (err: any) {
     console.warn('[Aggregator] Failed to fetch roles for matching:', err.message);
     return [];
   }
 }
 
-async function upsertEventToMongo(
-  db: any,
+async function upsertEventToPostgres(
   event: EventWithSources
 ): Promise<'new' | 'updated' | 'failed'> {
   try {
-    const { _id, ...eventData } = event as any;
-
-    // Try to find existing by slug first, then by externalId in sources
-    const existing = await db.collection(EVENTS_COLLECTION).findOne({
-      $or: [
-        { slug: event.slug },
-        { 'sources.sourceEventId': { $in: event.sources.map((s: any) => s.sourceEventId) } }
-      ]
-    });
-
-    if (existing) {
-      // Merge sources arrays
-      const existingSources = existing.sources || [existing.source].filter(Boolean);
-      const existingPlatforms = new Set(existingSources.map((s: any) => s.platform));
-      const newSources = event.sources.filter((s: any) => !existingPlatforms.has(s.platform));
-
-      await db.collection(EVENTS_COLLECTION).updateOne(
-        { _id: existing._id },
-        {
-          $set: {
-            ...eventData,
-            sources: [...existingSources, ...newSources],
-            updatedAt: new Date().toISOString(),
-            lastSyncedAt: new Date().toISOString()
-          }
-        }
-      );
-      return 'updated';
-    } else {
-      await db.collection(EVENTS_COLLECTION).insertOne({
-        ...eventData,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        lastSyncedAt: new Date().toISOString()
-      });
-      return 'new';
-    }
+    const existingRes = await query(`SELECT id FROM events WHERE slug = $1 LIMIT 1;`, [event.slug]);
+    const isUpdate = existingRes.rows.length > 0;
+    await upsertEvent(event as EventDocument);
+    return isUpdate ? 'updated' : 'new';
   } catch (err: any) {
     console.error(`[Aggregator] Failed to upsert event "${event.title}": ${err.message}`);
     return 'failed';
   }
 }
 
-async function writeSyncLog(db: any, report: SyncReport): Promise<void> {
+async function writeSyncLog(report: SyncReport): Promise<void> {
   try {
-    await db.collection(SYNC_LOGS_COLLECTION).insertOne({
-      ...report,
-      _id: undefined,
-      syncId: report.syncId,
-      createdAt: new Date().toISOString()
-    });
+    await query(`
+      INSERT INTO event_sync_logs (sync_id, report, created_at)
+      VALUES ($1, $2, NOW());
+    `, [report.syncId, JSON.stringify(report)]);
   } catch (err: any) {
     console.warn('[Aggregator] Failed to write sync log:', err.message);
   }
@@ -289,24 +255,22 @@ export async function runEventAggregation(options: {
   const allRoles = await fetchAllRoles();
   matchRolesForAllEvents(deduplicated, allRoles);
 
-  // 8. Upsert into MongoDB
+  // 8. Upsert into PostgreSQL
   if (!options.dryRun) {
-    if (!isMongoConfigured()) {
-      report.errors.push('MongoDB not configured — skipping database upsert.');
-      console.error('[Aggregator] MongoDB not configured.');
+    if (!isPostgresConfigured()) {
+      report.errors.push('PostgreSQL not configured — skipping database upsert.');
+      console.error('[Aggregator] PostgreSQL not configured.');
     } else {
-      const db = await getDb();
-
       // Mark expired events in DB
       try {
-        const expireResult = await db.collection(EVENTS_COLLECTION).updateMany(
-          {
-            'dates.registrationDeadline': { $lt: new Date().toISOString() },
-            status: { $nin: ['EXPIRED', 'CANCELLED'] }
-          },
-          { $set: { status: 'EXPIRED', updatedAt: new Date().toISOString() } }
-        );
-        report.expiredCount = expireResult.modifiedCount;
+        const now = new Date().toISOString();
+        const expireResult = await query(`
+          UPDATE events
+          SET status = 'EXPIRED', updated_at = NOW()
+          WHERE (dates->>'registrationDeadline') < $1
+            AND status NOT IN ('EXPIRED', 'CANCELLED');
+        `, [now]);
+        report.expiredCount = expireResult.rowCount ?? 0;
         console.log(`[Aggregator] Marked ${report.expiredCount} expired events.`);
       } catch (err: any) {
         console.warn('[Aggregator] Expire sweep failed:', err.message);
@@ -320,7 +284,7 @@ export async function runEventAggregation(options: {
           continue;
         }
 
-        const result = await upsertEventToMongo(db, event);
+        const result = await upsertEventToPostgres(event);
         if (result === 'new') report.newCount++;
         else if (result === 'updated') report.updatedCount++;
         else report.failedCount++;
@@ -336,7 +300,7 @@ export async function runEventAggregation(options: {
       // Write sync log
       report.completedAt = new Date().toISOString();
       report.durationMs = Date.now() - startMs;
-      await writeSyncLog(db, report);
+      await writeSyncLog(report);
     }
   } else {
     console.log('[Aggregator] DRY RUN — no DB writes performed.');

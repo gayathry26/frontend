@@ -4,7 +4,7 @@ import { generateEmbedding, generateEmbeddings, generateQueryEmbedding } from '.
 import { addDocuments, searchSimilar, deleteProjectDocuments, clearIndex, VectorChunkRecord } from './vectorStoreService';
 import { analyzeProject as analyzeProjectDocs, extractProjectOverview, sanitizeSecrets, ProjectProfile, ProjectClaim, KnowledgeNode, StructuredProjectOverview } from './projectAnalysisService';
 import { generateQuestion, analyzeAnswer, generateFinalReport, RAGInterviewSession, RAGInterviewQuestion, AnswerEvaluation } from './interviewService';
-import { getDb, isMongoConfigured } from '../config/mongodb';
+import { query, isPostgresConfigured } from '../config/postgres';
 
 export {
   loadDefaultReadme,
@@ -38,35 +38,28 @@ export type {
   AnswerEvaluation
 };
 
-// Pipeline Function: Fully ingests raw README text through Markdown Parsing -> Chunking -> Embedding -> Vector Indexing -> Project Analysis
+// Full Ingestion Pipeline
 export async function ingestProjectDocumentation(
   readmeContent: string,
-  projectId = `proj_${Date.now()}`
-): Promise<{
-  projectId: string;
-  profile: ProjectProfile;
-  claims: ProjectClaim[];
-  knowledgeNodes: KnowledgeNode[];
-  chunksCount: number;
-  topics: string[];
-  readmeContent: string;
-}> {
-  const val = validateReadme(readmeContent);
-  if (!val.isValid) {
-    throw new Error(val.error || 'Invalid README documentation');
+  projectId = 'default_project'
+): Promise<any> {
+  const sanitized = sanitizeSecrets(readmeContent);
+  const validation = validateReadme(sanitized);
+
+  if (!validation.isValid && validation.error) {
+    console.warn(`README validation issues found for ${projectId}:`, validation.error);
   }
 
-  const sections = parseMarkdown(readmeContent);
-  const chunks = chunkDocument(sections, projectId);
+  // Chunking
+  const sections = parseMarkdown(sanitized);
+  const chunks: DocumentChunk[] = chunkDocument(sections, projectId);
 
-  // Generate vector embeddings for every chunk
-  const chunkTexts = chunks.map(c => `${c.section}\n${c.text}`);
-  const embeddings = await generateEmbeddings(chunkTexts);
-
-  // Index in Vector Store
+  // Embeddings & Vector Storage
+  const texts = chunks.map(c => `${c.section} \n ${c.text}`);
+  const embeddings = await generateEmbeddings(texts);
   await addDocuments(chunks, embeddings);
 
-  // Extract Profile & Claims
+  // Analysis & Profile Building
   const analysis = await analyzeProjectDocs(chunks, readmeContent);
 
   // Store Project Record in DB / memory
@@ -86,11 +79,32 @@ export async function ingestProjectDocumentation(
   projectMap.set(projectId, projectRecord);
   (global as any)._userProjectsMap = projectMap;
 
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const col = db.collection('projects');
-      await col.updateOne({ projectId }, { $set: projectRecord }, { upsert: true });
+      await query(`
+        INSERT INTO projects (
+          project_id, name, readme_content, profile, claims,
+          knowledge_nodes, chunks_count, topics, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        ON CONFLICT (project_id) DO UPDATE SET
+          name = EXCLUDED.name,
+          readme_content = EXCLUDED.readme_content,
+          profile = EXCLUDED.profile,
+          claims = EXCLUDED.claims,
+          knowledge_nodes = EXCLUDED.knowledge_nodes,
+          chunks_count = EXCLUDED.chunks_count,
+          topics = EXCLUDED.topics,
+          updated_at = NOW();
+      `, [
+        projectId,
+        analysis.profile.name,
+        readmeContent,
+        JSON.stringify(analysis.profile),
+        JSON.stringify(analysis.claims),
+        JSON.stringify(analysis.knowledgeNodes),
+        chunks.length,
+        JSON.stringify(analysis.topics)
+      ]);
     } catch {}
   }
 
@@ -114,21 +128,26 @@ export async function ingestDefaultReadme(): Promise<any> {
   return ingestProjectDocumentation(loaded.content, 'default_project_docs');
 }
 
-// Get Ingested User Projects List (Dynamic, no hardcoded cards!)
+// Get Ingested User Projects List
 export async function getUserProjects(userId = 'default_student'): Promise<any[]> {
   const projectMap = (global as any)._userProjectsMap || new Map();
   const list: any[] = Array.from(projectMap.values());
 
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const col = db.collection('projects');
-      const docs = await col.find({}).toArray();
-      if (docs.length > 0) {
-        return docs.map(d => {
-          const { _id, ...rest } = d as any;
-          return rest;
-        });
+      const res = await query(`SELECT * FROM projects ORDER BY updated_at DESC;`);
+      if (res.rows.length > 0) {
+        return res.rows.map(d => ({
+          projectId: d.project_id,
+          name: d.name,
+          readmeContent: d.readme_content,
+          profile: typeof d.profile === 'string' ? JSON.parse(d.profile) : (d.profile || {}),
+          claims: typeof d.claims === 'string' ? JSON.parse(d.claims) : (d.claims || []),
+          knowledgeNodes: typeof d.knowledge_nodes === 'string' ? JSON.parse(d.knowledge_nodes) : (d.knowledge_nodes || []),
+          chunksCount: d.chunks_count,
+          topics: typeof d.topics === 'string' ? JSON.parse(d.topics) : (d.topics || []),
+          updatedAt: d.updated_at ? new Date(d.updated_at).toISOString() : new Date().toISOString()
+        }));
       }
     } catch {}
   }
@@ -145,57 +164,83 @@ export async function getUserProjects(userId = 'default_student'): Promise<any[]
   return list;
 }
 
+// Add User Project
 export async function addUserProject(projectData: any, userId = 'default_student'): Promise<any> {
-  const text = projectData.readmeText || `# ${projectData.name}\n${projectData.description}`;
-  return ingestProjectDocumentation(text, `proj_${Date.now()}`);
+  const readme = projectData.readmeContent || projectData.readme || '';
+  const pid = projectData.projectId || projectData.id || `proj_${Date.now()}`;
+  return ingestProjectDocumentation(readme, pid);
 }
 
+// Start New Interview Session
 export async function startInterviewSession(params: {
-  userId?: string;
   projectId: string;
-  mode?: any;
+  mode?: 'QUICK' | 'DETAILED';
+  candidateName?: string;
 }): Promise<RAGInterviewSession> {
-  const projects = await getUserProjects(params.userId || 'default_student');
-  const proj = projects.find(p => p.projectId === params.projectId) || projects[0];
+  const mode: any = params.mode === 'DETAILED' ? 'FULL' : (params.mode || 'QUICK');
+  const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
-  if (!proj) {
-    throw new Error('No indexed project found. Please upload or connect a README.md first.');
+  // Find project profile and claims
+  const projectMap = (global as any)._userProjectsMap || new Map();
+  let proj = projectMap.get(params.projectId);
+
+  if (!proj && isPostgresConfigured()) {
+    try {
+      const res = await query(`SELECT * FROM projects WHERE project_id = $1 LIMIT 1;`, [params.projectId]);
+      if (res.rows.length > 0) {
+        const d = res.rows[0];
+        proj = {
+          projectId: d.project_id,
+          name: d.name,
+          readmeContent: d.readme_content,
+          profile: typeof d.profile === 'string' ? JSON.parse(d.profile) : d.profile,
+          claims: typeof d.claims === 'string' ? JSON.parse(d.claims) : d.claims,
+          topics: typeof d.topics === 'string' ? JSON.parse(d.topics) : d.topics,
+        };
+      }
+    } catch {}
   }
 
-  const mode = params.mode || 'FULL';
-  const initialQ = await generateQuestion(proj.projectId, 'Project Architecture Overview', mode, [], proj.claims || []);
+  const claims = proj?.claims || [
+    {
+      claimText: 'Implemented full-stack features with scalable database',
+      sourceSection: 'Architecture',
+      confidence: 0.9,
+      tags: ['Architecture', 'Database'],
+      verifiable: true,
+    }
+  ];
+
+  const firstTopic = proj?.topics?.[0] || 'System Architecture';
+  const initialQuestion = await generateQuestion(params.projectId, firstTopic, mode, [], claims);
 
   const session: RAGInterviewSession = {
-    sessionId: `session_${Date.now()}`,
-    projectId: proj.projectId,
-    projectName: proj.name || proj.profile?.name || 'Project Defense',
-    readmeContent: proj.readmeContent || '',
+    sessionId,
+    projectId: params.projectId,
+    projectName: proj?.name || 'Project System',
+    readmeContent: proj?.readmeContent || '',
     mode,
-    profile: proj.profile || {
-      name: proj.name,
-      projectType: 'Full Stack Web Application',
-      techStack: ['React', 'Node.js', 'Express', 'MongoDB'],
-      architecture: 'Client-Server Architecture',
-      architectureFlow: ['React', 'REST API', 'Node.js Express', 'MongoDB'],
-      keyFeatures: ['Service Ticket Management', 'RBAC Auth'],
-      aiIdentifiedContributions: ['Backend REST API', 'Database Schema'],
-      notSpecifiedFields: [],
-    },
-    claims: proj.claims || [],
-    questions: [initialQ],
     currentQuestionIndex: 0,
-    status: 'in_progress',
-    knowledgeMap: {
-      Architecture: 'Medium',
-      Database: 'Medium',
-      Authentication: 'Medium',
-      ApiDesign: 'Medium',
-      Scalability: 'Weak',
-      PersonalContribution: 'Strong',
+    questions: [initialQuestion],
+    profile: proj?.profile || {
+      name: proj?.name || 'Project System',
+      tagline: '',
+      description: '',
+      targetAudience: '',
+      techStack: [],
+      architectureType: '',
+      coreModules: [],
+      keyFeatures: [],
+      dependencies: [],
+      assumedScale: '',
+      complexityScore: 5,
     },
-    contradictions: [],
     weakAreas: [],
     strongAreas: [],
+    status: 'in_progress',
+    contradictions: [],
+    knowledgeMap: {},
+    claims,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -204,11 +249,16 @@ export async function startInterviewSession(params: {
   memoryMap.set(session.sessionId, session);
   (global as any)._ragSessionsMap = memoryMap;
 
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const col = db.collection('interview_sessions');
-      await col.insertOne(session as any);
+      await query(`
+        INSERT INTO interview_sessions (session_id, data, status, created_at, updated_at)
+        VALUES ($1, $2, $3, NOW(), NOW())
+        ON CONFLICT (session_id) DO UPDATE SET
+          data = EXCLUDED.data,
+          status = EXCLUDED.status,
+          updated_at = NOW();
+      `, [session.sessionId, JSON.stringify(session), session.status]);
     } catch {}
   }
 
@@ -223,14 +273,11 @@ export async function submitAnswerAndGetNext(params: {
   const memoryMap = (global as any)._ragSessionsMap || new Map();
   let session: RAGInterviewSession | null = memoryMap.get(params.sessionId) || null;
 
-  if (!session && isMongoConfigured()) {
+  if (!session && isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const col = db.collection<RAGInterviewSession>('interview_sessions');
-      const doc = await col.findOne({ sessionId: params.sessionId });
-      if (doc) {
-        const { _id, ...rest } = doc as any;
-        session = rest as RAGInterviewSession;
+      const res = await query(`SELECT data FROM interview_sessions WHERE session_id = $1 LIMIT 1;`, [params.sessionId]);
+      if (res.rows.length > 0) {
+        session = typeof res.rows[0].data === 'string' ? JSON.parse(res.rows[0].data) : res.rows[0].data;
       }
     } catch {}
   }
@@ -284,11 +331,13 @@ export async function submitAnswerAndGetNext(params: {
   memoryMap.set(session.sessionId, session);
   (global as any)._ragSessionsMap = memoryMap;
 
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const col = db.collection('interview_sessions');
-      await col.updateOne({ sessionId: session.sessionId }, { $set: session });
+      await query(`
+        UPDATE interview_sessions
+        SET data = $1, status = $2, updated_at = NOW()
+        WHERE session_id = $3;
+      `, [JSON.stringify(session), session.status, session.sessionId]);
     } catch {}
   }
 
@@ -309,16 +358,11 @@ export async function getInterviewHistory(userId = 'default_student'): Promise<R
   const memoryMap = (global as any)._ragSessionsMap || new Map();
   const list: RAGInterviewSession[] = Array.from(memoryMap.values());
 
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      const col = db.collection<RAGInterviewSession>('interview_sessions');
-      const docs = await col.find({}).sort({ createdAt: -1 }).toArray();
-      if (docs.length > 0) {
-        return docs.map(d => {
-          const { _id, ...rest } = d as any;
-          return rest as RAGInterviewSession;
-        });
+      const res = await query(`SELECT data FROM interview_sessions ORDER BY created_at DESC;`);
+      if (res.rows.length > 0) {
+        return res.rows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
       }
     } catch {}
   }
@@ -331,4 +375,3 @@ export const finalizeInterviewEvaluation = generateFinalReport;
 export async function retryQuestionEvaluation(sessionId: string, questionId: string, newAnswer: string): Promise<any> {
   return submitAnswerAndGetNext({ sessionId, answer: newAnswer });
 }
-

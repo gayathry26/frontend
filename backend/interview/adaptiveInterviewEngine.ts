@@ -10,7 +10,7 @@ import { evaluateAnswer, DetailedAnswerEvaluation } from '../evaluation/answerEv
 import { calculateOwnershipConfidence, OwnershipConfidenceResult } from '../evaluation/confidenceAnalyzer';
 import { retrieveProjectContext } from '../rag/retriever';
 import { generateAssessmentReport, FinalKnowledgeAssessmentReport } from '../reports/assessmentReport';
-import { getDb, isMongoConfigured } from '../config/mongodb';
+import { query, isPostgresConfigured } from '../config/postgres';
 
 export type InterviewMode = 'QUICK' | 'STANDARD' | 'DEEP_TECHNICAL';
 
@@ -90,15 +90,16 @@ export async function createInterviewSession(params: {
 
   sessionsMap.set(sessionId, session);
 
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      await db.collection('adaptive_interview_sessions').insertOne({
-        ...session,
-        chunks: [], // exclude heavy raw chunks from MongoDB document
-      } as any);
+      await query(
+        `INSERT INTO adaptive_interview_sessions (id, session_data, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (id) DO UPDATE SET session_data = $2, updated_at = NOW()`,
+        [sessionId, JSON.stringify({ ...session, chunks: [] })]
+      );
     } catch (e) {
-      console.warn('Failed to persist session to MongoDB:', e);
+      console.warn('Failed to persist session to PostgreSQL:', e);
     }
   }
 
@@ -211,14 +212,16 @@ export async function submitAdaptiveAnswer(params: {
   session.updatedAt = new Date().toISOString();
   sessionsMap.set(session.sessionId, session);
 
-  if (isMongoConfigured()) {
+  if (isPostgresConfigured()) {
     try {
-      const db = await getDb();
-      await db.collection('adaptive_interview_sessions').updateOne(
-        { sessionId: session.sessionId },
-        { $set: { ...session, chunks: [] } },
-        { upsert: true }
-      );
+      await query(`
+        INSERT INTO adaptive_interview_sessions (session_id, data, status, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (session_id) DO UPDATE SET
+          data = EXCLUDED.data,
+          status = EXCLUDED.status,
+          updated_at = NOW();
+      `, [session.sessionId, JSON.stringify({ ...session, chunks: [] }), session.status]);
     } catch {}
   }
 

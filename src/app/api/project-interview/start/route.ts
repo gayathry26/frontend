@@ -3,7 +3,7 @@ import { createInterviewSession } from '@/backend/interview/adaptiveInterviewEng
 import { loadSampleRepository } from '@/backend/github/repositoryFetcher';
 import { buildProjectKnowledge } from '@/backend/analysis/projectKnowledgeBuilder';
 import { chunkSourceFiles } from '@/backend/rag/chunker';
-import { getDb, isMongoConfigured } from '@/backend/config/mongodb';
+import { query, isPostgresConfigured } from '@/backend/config/postgres';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,12 +15,19 @@ export async function POST(req: Request) {
     const globalProjects = (global as any)._githubProjectsMap || new Map();
     let project = globalProjects.get(projectId);
 
-    if (!project && isMongoConfigured()) {
+    if (!project && isPostgresConfigured()) {
       try {
-        const db = await getDb();
-        const doc = await db.collection('analyzed_github_repositories').findOne({ projectId });
-        if (doc) {
-          project = doc;
+        const res = await query(`SELECT * FROM analyzed_github_repositories WHERE project_id = $1 LIMIT 1;`, [projectId]);
+        if (res.rows.length > 0) {
+          const row = res.rows[0];
+          project = {
+            projectId: row.project_id,
+            name: row.name,
+            url: row.url,
+            projectKnowledge: typeof row.project_knowledge === 'string' ? JSON.parse(row.project_knowledge) : row.project_knowledge,
+            summary: row.summary,
+            metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata
+          };
         }
       } catch {}
     }

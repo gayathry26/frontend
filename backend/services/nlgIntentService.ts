@@ -52,7 +52,7 @@ export const GEMINI_TOOL_DECLARATIONS = {
   functionDeclarations: [
     {
       name: 'updateRoleSkills',
-      description: 'Update technical skills and/or soft skills on an existing IT role in MongoDB Atlas.',
+      description: 'Update technical skills and/or soft skills on an existing IT role in PostgreSQL.',
       parameters: {
         type: 'OBJECT',
         properties: {
@@ -65,7 +65,7 @@ export const GEMINI_TOOL_DECLARATIONS = {
     },
     {
       name: 'createRole',
-      description: 'Create a new IT role in MongoDB Atlas.',
+      description: 'Create a new IT role in PostgreSQL.',
       parameters: {
         type: 'OBJECT',
         properties: {
@@ -79,7 +79,7 @@ export const GEMINI_TOOL_DECLARATIONS = {
     },
     {
       name: 'addTechnicalSkill',
-      description: 'Add technical skill(s) to an existing role in MongoDB Atlas.',
+      description: 'Add technical skill(s) to an existing role in PostgreSQL.',
       parameters: {
         type: 'OBJECT',
         properties: {
@@ -140,7 +140,7 @@ export const GEMINI_TOOL_DECLARATIONS = {
     },
     {
       name: 'deleteRole',
-      description: 'Delete a role from MongoDB Atlas (requires admin confirmation).',
+      description: 'Delete a role from PostgreSQL (requires admin confirmation).',
       parameters: {
         type: 'OBJECT',
         properties: {
@@ -207,13 +207,13 @@ export const GEMINI_TOOL_DECLARATIONS = {
 
 const SYSTEM_PROMPT = `You are the AI Data Administrator for IT Career Hub.
 
-Your job is to understand administrator instructions, identify the intended operation, and request the correct backend tool to read or modify the IT Career Hub data stored in MongoDB Atlas.
+Your job is to understand administrator instructions, identify the intended operation, and request the correct backend tool to read or modify the IT Career Hub data stored in PostgreSQL.
 
 You are NOT the database itself.
 
-You must NEVER directly execute MongoDB commands, generate arbitrary MongoDB queries, or modify the database without using the approved backend tools.
+You must NEVER directly execute database commands, generate arbitrary SQL queries, or modify the database without using the approved backend tools.
 
-The backend is responsible for all actual MongoDB operations.
+The backend is responsible for all actual PostgreSQL operations.
 
 ============================================================
 CORE OBJECTIVE
@@ -223,9 +223,9 @@ Convert administrator natural-language instructions into a precise, validated op
 
 The complete pipeline is:
 
-ADMIN INPUT -> UNDERSTAND INTENT -> EXTRACT TARGET ROLE -> EXTRACT FIELDS / VALUES -> VALIDATE -> RESOLVE ROLE USING BACKEND -> SHOW PREVIEW -> ADMIN CONFIRMATION -> CALL APPROVED BACKEND TOOL -> MONGODB ATLAS UPDATE -> VERIFY DATABASE UPDATE -> REVALIDATE NEXT.JS DATA -> FRONTEND DISPLAYS UPDATED DATA
+ADMIN INPUT -> UNDERSTAND INTENT -> EXTRACT TARGET ROLE -> EXTRACT FIELDS / VALUES -> VALIDATE -> RESOLVE ROLE USING BACKEND -> SHOW PREVIEW -> ADMIN CONFIRMATION -> CALL APPROVED BACKEND TOOL -> POSTGRESQL UPDATE -> VERIFY DATABASE UPDATE -> REVALIDATE NEXT.JS DATA -> FRONTEND DISPLAYS UPDATED DATA
 
-MongoDB Atlas is the source of truth.
+PostgreSQL is the source of truth.
 
 ============================================================
 MOST IMPORTANT RULE
@@ -389,7 +389,7 @@ function parseDetailedIntentLocally(text: string): DetailedIntent {
       return {
         intent: 'HELP',
         isQuestion: true,
-        clarificationMessage: "Yes, I can create a new role in MongoDB Atlas. What should the role be called and which category/domain does it belong to?",
+        clarificationMessage: "Yes, I can create a new role in PostgreSQL. What should the role be called and which category/domain does it belong to?",
         values: [],
         missingInformation: [],
         needsClarification: false
