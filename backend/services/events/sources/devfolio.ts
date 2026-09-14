@@ -1,70 +1,147 @@
 /**
  * Devfolio Public API Source Adapter
  *
- * Uses Devfolio's public GraphQL API to fetch hackathons open to Indian students.
- * Full pagination via `after` cursor-based pagination.
+ * Fetches open hackathons from Devfolio's public REST API.
  *
- * API: POST https://api.devfolio.co/api/hackathons
+ * API:
+ * GET https://api.devfolio.co/api/hackathons
+ *
+ * Pagination:
+ * page + limit
+ *
+ * Important:
+ * - We only keep currently open/usable hackathons.
+ * - We never invent dates.
+ * - We prefer Devfolio's external application URL when available.
+ * - If applications are hosted on Devfolio, the event's Devfolio
+ *   hackathon page is used as the registration destination.
  */
 
-import { EventSource, RawEvent, FetchResult } from './EventSource';
+import {
+  EventSource,
+  RawEvent,
+  FetchResult,
+} from './EventSource';
 
 const DEVFOLIO_API_BASE = 'https://api.devfolio.co';
+
 const PAGE_SIZE = 50;
 const REQUEST_TIMEOUT_MS = 15000;
+const MAX_PAGES = 30;
 
 interface DevfolioHackathon {
-  id?: string;
+  id?: string | number;
   uuid?: string;
+
   slug?: string;
+
   name?: string;
   title?: string;
   tagline?: string;
+  desc?: string;
   description?: string;
-  starts_at?: string;
-  ends_at?: string;
-  submission_period_ends_at?: string;
-  registration_closes_at?: string;
+
+  starts_at?: string | null;
+  ends_at?: string | null;
+
+  submission_period_ends_at?: string | null;
+  registration_closes_at?: string | null;
+
   is_online?: boolean;
-  city?: string;
-  state?: string;
-  country?: string;
+  private?: boolean;
+
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  location?: string | null;
+
   prize_pool?: number | string | null;
-  organization?: { name?: string; website?: string } | null;
-  organiser_name?: string;
+
+  organization?: {
+    name?: string;
+    website?: string;
+  } | null;
+
+  organiser_name?: string | null;
+
   tags?: string[];
   tech_tags?: string[];
   skills?: string[];
-  url?: string;
-  registration_link?: string;
-  website?: string;
-  status?: string;
-  mode?: string;
+
+  url?: string | null;
+  website?: string | null;
+  registration_link?: string | null;
+
+  status?: string | null;
+  mode?: string | null;
+  type?: string | null;
+
+  team_min?: number | null;
+  team_size?: number | string | null;
+
+  hackathon_setting?: {
+    reg_starts_at?: string | null;
+    reg_ends_at?: string | null;
+
+    external_apply_url?: string | null;
+
+    site?: string | null;
+
+    [key: string]: any;
+  } | null;
+
+  [key: string]: any;
 }
 
 interface DevfolioApiResponse {
+  result?: DevfolioHackathon[];
+
   hackathons?: DevfolioHackathon[];
+
   data?: DevfolioHackathon[];
+
   results?: DevfolioHackathon[];
+
   count?: number;
+
   total?: number;
-  next?: string | null;
+
+  pages?: number;
+
+  page?: number;
+
   has_next?: boolean;
+
+  next?: string | null;
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
+/**
+ * Fetch with timeout.
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
   try {
     return await fetch(url, {
       ...options,
+
       signal: controller.signal,
+
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         'User-Agent': 'IT-Career-Explorer/1.0',
-        ...(options.headers || {})
-      }
+
+        ...(options.headers || {}),
+      },
     });
   } finally {
     clearTimeout(timer);
@@ -72,114 +149,507 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
 }
 
 /**
- * Returns true if the given URL is a generic platform homepage or listing page,
- * NOT an event-specific registration URL.
- *
- * Examples of GENERIC (blocked) URLs:
- *   https://devfolio.co/
- *   https://devfolio.co/hackathons
- *   https://unstop.com/
- *   https://unstop.com/hackathons
- *
- * Examples of SPECIFIC (allowed) URLs:
- *   https://devfolio.co/hackathons/bangalore-ctf-2026
- *   https://unstop.com/hackathons/react-championship,12345
+ * Check whether a URL is valid HTTP/HTTPS.
  */
-function isGenericPlatformUrl(url: string): boolean {
+function isValidUrl(
+  url: string | null | undefined
+): boolean {
+  if (!url) {
+    return false;
+  }
+
   try {
     const parsed = new URL(url);
-    const path = parsed.pathname.replace(/\/+$/, ''); // strip trailing slash
 
-    const genericPaths: string[] = [
+    return (
+      parsed.protocol === 'http:' ||
+      parsed.protocol === 'https:'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Prevent generic Devfolio pages from being used
+ * as registration destinations.
+ */
+function isGenericPlatformUrl(
+  url: string
+): boolean {
+  try {
+    const parsed = new URL(url);
+
+    const path = parsed.pathname
+      .replace(/\/+$/, '')
+      .toLowerCase();
+
+    const genericPaths = [
       '',
+      '/',
       '/hackathons',
       '/events',
       '/competitions',
       '/challenges',
-      '/opportunities',
       '/contests',
-      '/programs',
-      '/explore'
+      '/opportunities',
+      '/explore',
     ];
 
-    return genericPaths.includes(path.toLowerCase());
+    return genericPaths.includes(path);
   } catch {
-    return true; // Unparseable URL = treat as invalid
+    return true;
   }
 }
 
-function normalizeDevfolioHackathon(raw: DevfolioHackathon): RawEvent {
-  const skills: string[] = [
-    ...(raw.tags || []),
-    ...(raw.tech_tags || []),
-    ...(raw.skills || [])
-  ].filter(Boolean);
-
-  // IMPORTANT: Use the ACTUAL URL from the API response.
-  // NEVER construct a URL from the slug — that would invent a URL.
-  // The API may provide: registration_link, url, website (in priority order).
-  // sourceUrl = the listing page on Devfolio (for attribution), distinct from registrationUrl.
-  const actualRegistrationUrl = raw.registration_link || raw.url || raw.website || null;
-  const registrationUrl = actualRegistrationUrl && !isGenericPlatformUrl(actualRegistrationUrl)
-    ? actualRegistrationUrl
-    : null;
-
-  // sourceUrl is the Devfolio listing page for this specific event.
-  // We use slug-based URL ONLY for the source attribution link, NOT for registration.
-  const sourceUrl = raw.slug ? `https://devfolio.co/hackathons/${raw.slug}` : null;
-
-  let prizeAmount: number | null = null;
-  if (typeof raw.prize_pool === 'number') prizeAmount = raw.prize_pool;
-  else if (typeof raw.prize_pool === 'string') {
-    const match = raw.prize_pool.match(/[\d,]+/);
-    if (match) prizeAmount = parseInt(match[0].replace(',', ''), 10);
+/**
+ * Get the canonical Devfolio hackathon page.
+ *
+ * Devfolio exposes a public page for each hackathon.
+ */
+function getDevfolioPageUrl(
+  raw: DevfolioHackathon
+): string | null {
+  if (raw.slug) {
+    return `https://devfolio.co/hackathons/${raw.slug}`;
   }
 
-  const orgName = raw.organization?.name || raw.organiser_name || null;
-  const orgWebsite = raw.organization?.website || null;
+  if (
+    isValidUrl(raw.url)
+  ) {
+    return raw.url!;
+  }
 
-  let mode: string | null = null;
-  if (raw.mode) mode = raw.mode;
-  else if (raw.is_online === true) mode = 'ONLINE';
-  else if (raw.is_online === false) mode = 'OFFLINE';
+  return null;
+}
+
+/**
+ * Get the actual registration/application destination.
+ *
+ * Priority:
+ *
+ * 1. external_apply_url
+ * 2. explicit registration_link
+ * 3. Devfolio hackathon page
+ *
+ * Why is the Devfolio page allowed?
+ *
+ * Devfolio can host the application itself. Its documentation
+ * describes users applying directly through the Devfolio
+ * hackathon page.
+ */
+function getRegistrationUrl(
+  raw: DevfolioHackathon
+): string | null {
+  const externalApplyUrl =
+    raw.hackathon_setting
+      ?.external_apply_url;
+
+  if (
+    isValidUrl(externalApplyUrl) &&
+    !isGenericPlatformUrl(externalApplyUrl!)
+  ) {
+    return externalApplyUrl!;
+  }
+
+  if (
+    isValidUrl(raw.registration_link) &&
+    !isGenericPlatformUrl(raw.registration_link!)
+  ) {
+    return raw.registration_link!;
+  }
+
+  const devfolioPage =
+    getDevfolioPageUrl(raw);
+
+  if (devfolioPage) {
+    return devfolioPage;
+  }
+
+  return null;
+}
+
+/**
+ * Extract prize amount.
+ */
+function extractPrizeAmount(
+  raw: DevfolioHackathon
+): number | null {
+  const value = raw.prize_pool;
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  const match =
+    String(value).match(/[\d,]+/);
+
+  if (!match) {
+    return null;
+  }
+
+  return parseInt(
+    match[0].replace(/,/g, ''),
+    10
+  );
+}
+
+/**
+ * Extract team size.
+ */
+function extractTeamSize(
+  raw: DevfolioHackathon
+): {
+  min: number | null;
+  max: number | null;
+} {
+  if (
+    typeof raw.team_min === 'number'
+  ) {
+    const max =
+      typeof raw.team_size === 'number'
+        ? raw.team_size
+        : null;
+
+    return {
+      min: raw.team_min,
+      max,
+    };
+  }
+
+  if (
+    typeof raw.team_size === 'number'
+  ) {
+    return {
+      min: null,
+      max: raw.team_size,
+    };
+  }
+
+  if (
+    typeof raw.team_size === 'string'
+  ) {
+    const range =
+      raw.team_size.match(
+        /(\d+)\s*[-–]\s*(\d+)/
+      );
+
+    if (range) {
+      return {
+        min: Number(range[1]),
+        max: Number(range[2]),
+      };
+    }
+
+    const single =
+      raw.team_size.match(/\d+/);
+
+    if (single) {
+      const value =
+        Number(single[0]);
+
+      return {
+        min: value,
+        max: value,
+      };
+    }
+  }
 
   return {
-    externalId: `devfolio-${raw.uuid || raw.id || raw.slug || Math.random().toString(36).slice(2)}`,
-    platform: 'Devfolio',
-    title: raw.name || raw.title || 'Devfolio Hackathon',
-    description: raw.description || raw.tagline || null,
-    organizerName: orgName,
-    organizerWebsite: orgWebsite,
-    registrationDeadline: raw.registration_closes_at || raw.submission_period_ends_at || raw.ends_at || null,
-    startDate: raw.starts_at || null,
-    endDate: raw.ends_at || null,
-    mode: mode as any,
-    country: raw.country || null,
-    state: raw.state || null,
-    city: raw.city || null,
-    category: 'HACKATHON',
-    tags: raw.tags || [],
-    skills: [...new Set(skills)],
-    prizeAmount,
-    prizeCurrency: 'INR',
-    registrationUrl,
-    sourceUrl,
-    eligibility: ['College Students', 'Developers'],
-    rawPayload: raw as any
+    min: null,
+    max: null,
   };
 }
 
-export class DevfolioSource implements EventSource {
+/**
+ * Convert Devfolio mode to our normalized mode.
+ */
+function getMode(
+  raw: DevfolioHackathon
+): string | null {
+  if (raw.mode) {
+    return raw.mode;
+  }
+
+  if (raw.is_online === true) {
+    return 'ONLINE';
+  }
+
+  if (raw.is_online === false) {
+    return 'OFFLINE';
+  }
+
+  return null;
+}
+
+/**
+ * Determine registration deadline.
+ *
+ * IMPORTANT:
+ * Do not use event end date as a fake registration
+ * deadline if Devfolio does not provide one.
+ */
+function getRegistrationDeadline(
+  raw: DevfolioHackathon
+): string | null {
+  return (
+    raw.hackathon_setting
+      ?.reg_ends_at ||
+
+    raw.registration_closes_at ||
+
+    raw.submission_period_ends_at ||
+
+    null
+  );
+}
+
+/**
+ * Determine whether registration is still open.
+ *
+ * We primarily trust the registration deadline.
+ *
+ * If no registration deadline exists, we don't
+ * automatically reject the event.
+ */
+function isRegistrationStillOpen(
+  raw: DevfolioHackathon
+): boolean {
+  const deadline =
+    getRegistrationDeadline(raw);
+
+  if (!deadline) {
+    return true;
+  }
+
+  const timestamp =
+    Date.parse(deadline);
+
+  if (Number.isNaN(timestamp)) {
+    return true;
+  }
+
+  return (
+    timestamp >= Date.now()
+  );
+}
+
+/**
+ * Reject clearly unusable records.
+ */
+function isUsableHackathon(
+  raw: DevfolioHackathon
+): boolean {
+  // Private hackathons should not appear
+  // in the public student listing.
+  if (raw.private === true) {
+    return false;
+  }
+
+  // If the API explicitly says the event is closed,
+  // don't include it.
+  const status =
+    String(raw.status || '')
+      .toLowerCase();
+
+  if (
+    status === 'closed' ||
+    status === 'expired' ||
+    status === 'ended'
+  ) {
+    return false;
+  }
+
+  // Registration must not already be closed.
+  if (
+    !isRegistrationStillOpen(raw)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Normalize one Devfolio hackathon.
+ */
+function normalizeDevfolioHackathon(
+  raw: DevfolioHackathon
+): RawEvent {
+  const skills = [
+    ...(raw.tags || []),
+    ...(raw.tech_tags || []),
+    ...(raw.skills || []),
+  ]
+    .map((value) =>
+      String(value).trim()
+    )
+    .filter(Boolean);
+
+  const uniqueSkills = [
+    ...new Set(skills),
+  ];
+
+  const organizerName =
+    raw.organization?.name ||
+    raw.organiser_name ||
+    null;
+
+  const organizerWebsite =
+    raw.organization?.website ||
+    null;
+
+  const registrationUrl =
+    getRegistrationUrl(raw);
+
+  const sourceUrl =
+    getDevfolioPageUrl(raw);
+
+  const teamSize =
+    extractTeamSize(raw);
+
+  const registrationDeadline =
+    getRegistrationDeadline(raw);
+
+  const startDate =
+    raw.starts_at ||
+    null;
+
+  const endDate =
+    raw.ends_at ||
+    null;
+
+  return {
+    externalId:
+      raw.uuid ||
+      raw.id
+        ? `devfolio-${
+            raw.uuid || raw.id
+          }`
+        : `devfolio-${Buffer.from(
+            raw.name ||
+              raw.title ||
+              'unknown'
+          )
+            .toString('base64')
+            .slice(0, 20)}`,
+
+    platform: 'Devfolio',
+
+    title:
+      raw.name ||
+      raw.title ||
+      'Devfolio Hackathon',
+
+    description:
+      raw.description ||
+      raw.desc ||
+      raw.tagline ||
+      null,
+
+    organizerName,
+
+    organizerWebsite,
+
+    registrationDeadline,
+
+    startDate,
+
+    endDate,
+
+    mode:
+      getMode(raw) as any,
+
+    country:
+      raw.country ||
+      null,
+
+    state:
+      raw.state ||
+      null,
+
+    city:
+      raw.city ||
+      null,
+
+    venue:
+      raw.location ||
+      null,
+
+    category:
+      'HACKATHON',
+
+    tags:
+      raw.tags || [],
+
+    skills:
+      uniqueSkills,
+
+    prizeAmount:
+      extractPrizeAmount(raw),
+
+    prizeCurrency:
+      'INR',
+
+    prizeDescription:
+      raw.prize_pool
+        ? String(raw.prize_pool)
+        : null,
+
+    registrationUrl,
+
+    sourceUrl,
+
+    minTeamSize:
+      teamSize.min,
+
+    maxTeamSize:
+      teamSize.max,
+
+    /*
+     * Don't invent eligibility.
+     *
+     * Devfolio's API response does not reliably
+     * provide a universal eligibility field.
+     */
+    eligibility:
+      null,
+
+    rawPayload:
+      raw as any,
+  };
+}
+
+export class DevfolioSource
+  implements EventSource {
+
   name = 'Devfolio';
 
   async isAvailable(): Promise<boolean> {
     try {
-      const res = await fetchWithTimeout(
-        `${DEVFOLIO_API_BASE}/api/hackathons?limit=1&page=1`,
-        { method: 'GET' },
-        5000
-      );
-      return res.ok || res.status < 500;
+      const url =
+        `${DEVFOLIO_API_BASE}` +
+        `/api/hackathons` +
+        `?limit=1&page=1&status=open`;
+
+      const response =
+        await fetchWithTimeout(
+          url,
+          {
+            method: 'GET',
+          },
+          5000
+        );
+
+      return response.ok;
     } catch {
       return false;
     }
@@ -187,52 +657,155 @@ export class DevfolioSource implements EventSource {
 
   async fetchEvents(): Promise<FetchResult> {
     const allEvents: RawEvent[] = [];
+
     let page = 1;
     let pagesFetched = 0;
+
     let error: string | null = null;
 
     try {
-      while (true) {
-        const url = `${DEVFOLIO_API_BASE}/api/hackathons?limit=${PAGE_SIZE}&page=${page}&status=open`;
-        const res = await fetchWithTimeout(url, { method: 'GET' });
+      while (
+        page <= MAX_PAGES
+      ) {
+        const url =
+          `${DEVFOLIO_API_BASE}` +
+          `/api/hackathons` +
+          `?limit=${PAGE_SIZE}` +
+          `&page=${page}` +
+          `&status=open`;
 
-        if (!res.ok) {
-          if (page === 1) throw new Error(`Devfolio API returned status ${res.status}`);
-          console.warn(`[DevfolioSource] Page ${page} returned ${res.status}, stopping.`);
+        const response =
+          await fetchWithTimeout(
+            url,
+            {
+              method: 'GET',
+            }
+          );
+
+        if (!response.ok) {
+          if (page === 1) {
+            throw new Error(
+              `Devfolio API returned status ${response.status}`
+            );
+          }
+
+          console.warn(
+            `[DevfolioSource] ` +
+            `Page ${page} returned ` +
+            `${response.status}. ` +
+            `Stopping pagination.`
+          );
+
           break;
         }
 
-        const data: DevfolioApiResponse = await res.json();
-        const hackathons: DevfolioHackathon[] = data.hackathons || data.data || data.results || [];
+        const data:
+          DevfolioApiResponse =
+            await response.json();
 
-        if (hackathons.length === 0) break;
+        /*
+         * The live API currently returns:
+         *
+         * {
+         *   result: [...],
+         *   count: ...,
+         *   pages: ...
+         * }
+         *
+         * Keep fallbacks for compatibility.
+         */
+        const hackathons =
+          data.result ||
+          data.hackathons ||
+          data.data ||
+          data.results ||
+          [];
 
-        hackathons.forEach(h => allEvents.push(normalizeDevfolioHackathon(h)));
+        if (
+          !Array.isArray(hackathons) ||
+          hackathons.length === 0
+        ) {
+          break;
+        }
+
+        for (
+          const hackathon
+          of hackathons
+        ) {
+          if (
+            !isUsableHackathon(
+              hackathon
+            )
+          ) {
+            continue;
+          }
+
+          allEvents.push(
+            normalizeDevfolioHackathon(
+              hackathon
+            )
+          );
+        }
+
         pagesFetched++;
 
-        // Check if more pages exist
-        const total = data.total ?? data.count ?? 0;
-        if (total > 0 && allEvents.length >= total) break;
-        if (data.has_next === false) break;
-        if (hackathons.length < PAGE_SIZE) break;
-
-        page++;
-        if (pagesFetched >= 30) {
-          console.warn('[DevfolioSource] Reached page cap (30), stopping pagination.');
+        /*
+         * Stop when we've reached the API's
+         * reported page count.
+         */
+        if (
+          typeof data.pages === 'number' &&
+          page >= data.pages
+        ) {
           break;
         }
+
+        /*
+         * Also stop if the API tells us
+         * there isn't another page.
+         */
+        if (
+          data.has_next === false
+        ) {
+          break;
+        }
+
+        /*
+         * A short page normally means
+         * there are no more records.
+         */
+        if (
+          hackathons.length < PAGE_SIZE
+        ) {
+          break;
+        }
+
+        page++;
       }
 
-      console.log(`[DevfolioSource] Fetched ${allEvents.length} events across ${pagesFetched} page(s).`);
+      console.log(
+        `[DevfolioSource] ` +
+        `Fetched ${allEvents.length} ` +
+        `open hackathons across ` +
+        `${pagesFetched} page(s).`
+      );
     } catch (err: any) {
-      error = `DevfolioSource fetch error: ${err.message}`;
-      console.error(`[DevfolioSource] ${error}`);
+      error =
+        `DevfolioSource fetch error: ${
+          err?.message ||
+          String(err)
+        }`;
+
+      console.error(
+        `[DevfolioSource] ${error}`
+      );
     }
 
     return {
       events: allEvents,
-      fetchedCount: allEvents.length,
-      error
+      fetchedCount:
+        allEvents.length,
+      error,
     };
   }
 }

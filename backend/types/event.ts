@@ -44,9 +44,9 @@ export interface OrganizerInfo {
 }
 
 export interface DateInfo {
-  registrationDeadline: string;
-  startDate: string;
-  endDate: string;
+  registrationDeadline: string | null;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 export interface PrizeInfo {
@@ -65,7 +65,7 @@ export interface EventDocument {
   _id?: string;
   title: string;
   slug: string;
-  description: string;
+  description: string | null;
   type: EventCategory;
   organizer: OrganizerInfo;
   location: LocationStructure;
@@ -77,12 +77,10 @@ export interface EventDocument {
   prize?: PrizeInfo;
   registrationUrl?: string | null;
   registrationAvailable: boolean;
-  /** Primary source (kept for backward compatibility) */
   source: {
     platform: string;
     sourceUrl?: string | null;
   };
-  /** All contributing platform sources (for multi-source deduplication) */
   sources?: EventSourceRef[];
   status: EventStatus;
   lastSyncedAt?: string;

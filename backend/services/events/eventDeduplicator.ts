@@ -74,7 +74,11 @@ function isDuplicate(a: EventDocument, b: EventDocument): boolean {
   }
 
   // Date proximity
-  const dateMatch = datesOverlap(a.dates?.startDate, b.dates?.startDate, 14);
+const dateMatch = datesOverlap(
+  a.dates?.startDate ?? undefined,
+  b.dates?.startDate ?? undefined,
+  14
+);
 
   // Decision matrix
   if (titleSimilarity >= 0.85 && dateMatch) return true; // Very high title match + date = duplicate

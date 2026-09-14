@@ -1,20 +1,32 @@
 /**
  * Event Normalizer
  *
- * Converts raw platform-specific event data (RawEvent) into our canonical EventDocument format.
- * - Maps category names (e.g. "hackathon" → "HACKATHON")
- * - Normalizes Indian state & city names (e.g. "Bombay" → "Mumbai", "Bangalore" → "Bengaluru")
- * - Normalizes mode strings (e.g. "online", "virtual" → "ONLINE")
- * - Validates and strips placeholder/fake registration URLs
- * - Computes registration status based on deadline
+ * Converts platform-specific RawEvent data into the canonical EventDocument format.
+ *
+ * Important rules:
+ * - Never invent dates.
+ * - Never invent eligibility.
+ * - Never invent prize information.
+ * - Only use real registration URLs.
+ * - Normalize Indian cities/states.
+ * - Normalize event mode/category.
+ * - Determine status from the real registration deadline.
  */
 
 import { RawEvent } from './sources/EventSource';
-import { EventDocument, EventCategory, EventMode, EventStatus } from '../../types/event';
-import { validateRegistrationUrl, isPlaceholderUrl } from '../../utils/validateEventUrl';
+import {
+  EventDocument,
+  EventCategory,
+  EventMode,
+  EventStatus
+} from '../../types/event';
+import {
+  validateRegistrationUrl,
+  isPlaceholderUrl
+} from '../../utils/validateEventUrl';
 
 // ---------------------------------------------------------------------------
-// Indian State & City Normalization Maps
+// Indian State & City Normalization
 // ---------------------------------------------------------------------------
 
 const CITY_NORMALIZATION: Record<string, string> = {
@@ -34,7 +46,6 @@ const CITY_NORMALIZATION: Record<string, string> = {
   'vizag': 'Visakhapatnam',
   'vizagapatnam': 'Visakhapatnam',
   'trivandrum': 'Thiruvananthapuram',
-  'kozhikode': 'Kozhikode',
   'calicut': 'Kozhikode',
   'cochin': 'Kochi',
   'ernakulam': 'Kochi',
@@ -180,13 +191,14 @@ const STATE_NORMALIZATION: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Category Normalization Map
+// Category Normalization
 // ---------------------------------------------------------------------------
 
 const CATEGORY_MAP: Record<string, EventCategory> = {
   'hackathon': 'HACKATHON',
   'hack': 'HACKATHON',
   'hackhour': 'HACKATHON',
+
   'coding contest': 'CODING_CONTEST',
   'coding_contest': 'CODING_CONTEST',
   'coding challenge': 'CODING_CONTEST',
@@ -197,84 +209,189 @@ const CATEGORY_MAP: Record<string, EventCategory> = {
   'compete': 'CODING_CONTEST',
   'competition': 'CODING_CONTEST',
   'quiz': 'CODING_CONTEST',
+
   'ctf': 'CTF',
   'capture the flag': 'CTF',
   'security challenge': 'CTF',
+
   'workshop': 'WORKSHOP',
   'bootcamp': 'WORKSHOP',
   'training': 'WORKSHOP',
+
   'webinar': 'WEBINAR',
   'online talk': 'WEBINAR',
   'virtual talk': 'WEBINAR',
+
   'conference': 'CONFERENCE',
   'summit': 'CONFERENCE',
   'symposium': 'CONFERENCE',
   'conclave': 'CONFERENCE',
+
   'tech fest': 'TECH_FEST',
   'techfest': 'TECH_FEST',
   'tech_fest': 'TECH_FEST',
   'fest': 'TECH_FEST',
+
   'ideathon': 'IDEATHON',
   'idea': 'IDEATHON',
+
   'open source': 'OPEN_SOURCE',
   'open_source': 'OPEN_SOURCE',
   'opensource': 'OPEN_SOURCE',
+
   'career fair': 'CAREER_FAIR',
   'career_fair': 'CAREER_FAIR',
   'job fair': 'CAREER_FAIR',
   'placement fair': 'CAREER_FAIR',
+
   'project competition': 'PROJECT_COMPETITION',
   'project_competition': 'PROJECT_COMPETITION'
 };
 
 // ---------------------------------------------------------------------------
-// Helper Functions
+// Helpers
 // ---------------------------------------------------------------------------
 
-export function normalizeCity(city: string | null | undefined): string | null {
+export function normalizeCity(
+  city: string | null | undefined
+): string | null {
   if (!city) return null;
-  const lower = city.trim().toLowerCase();
-  return CITY_NORMALIZATION[lower] || city.trim();
+
+  const trimmed = city.trim();
+  if (!trimmed) return null;
+
+  const lower = trimmed.toLowerCase();
+
+  return CITY_NORMALIZATION[lower] || trimmed;
 }
 
-export function normalizeState(state: string | null | undefined): string | null {
+export function normalizeState(
+  state: string | null | undefined
+): string | null {
   if (!state) return null;
-  const lower = state.trim().toLowerCase();
-  return STATE_NORMALIZATION[lower] || state.trim();
+
+  const trimmed = state.trim();
+  if (!trimmed) return null;
+
+  const lower = trimmed.toLowerCase();
+
+  return STATE_NORMALIZATION[lower] || trimmed;
 }
 
-export function normalizeMode(mode: string | null | undefined): EventMode {
+export function normalizeMode(
+  mode: string | null | undefined
+): EventMode {
   if (!mode) return 'ONLINE';
+
   const lower = mode.toLowerCase().trim();
-  if (['online', 'virtual', 'remote', 'digital', 'web', 'internet'].includes(lower)) return 'ONLINE';
-  if (['hybrid', 'mixed', 'blended', 'both'].includes(lower)) return 'HYBRID';
-  if (['offline', 'in-person', 'in person', 'onsite', 'on-site', 'physical', 'live'].includes(lower)) return 'OFFLINE';
-  return 'ONLINE'; // Default to ONLINE for student-focused events
-}
 
-export function normalizeCategory(rawCategory: string | null | undefined): EventCategory {
-  if (!rawCategory) return 'HACKATHON';
-  const lower = rawCategory.toLowerCase().trim();
-  for (const [key, value] of Object.entries(CATEGORY_MAP)) {
-    if (lower.includes(key)) return value;
+  if (
+    [
+      'online',
+      'virtual',
+      'remote',
+      'digital',
+      'web',
+      'internet'
+    ].includes(lower)
+  ) {
+    return 'ONLINE';
   }
-  return 'HACKATHON'; // Default fallback
+
+  if (
+    [
+      'hybrid',
+      'mixed',
+      'blended',
+      'both'
+    ].includes(lower)
+  ) {
+    return 'HYBRID';
+  }
+
+  if (
+    [
+      'offline',
+      'in-person',
+      'in person',
+      'onsite',
+      'on-site',
+      'physical',
+      'live'
+    ].includes(lower)
+  ) {
+    return 'OFFLINE';
+  }
+
+  // We do not know the exact mode, so ONLINE is the safest
+  // compatibility fallback for existing data.
+  return 'ONLINE';
 }
 
-export function resolveStatus(registrationDeadline: string | null | undefined): EventStatus {
-  if (!registrationDeadline) return 'OPEN';
+export function normalizeCategory(
+  rawCategory: string | null | undefined
+): EventCategory {
+  if (!rawCategory) return 'HACKATHON';
+
+  const lower = rawCategory.toLowerCase().trim();
+
+  for (const [key, value] of Object.entries(CATEGORY_MAP)) {
+    if (lower.includes(key)) {
+      return value;
+    }
+  }
+
+  return 'HACKATHON';
+}
+
+/**
+ * Calculate event status using the REAL registration deadline.
+ *
+ * Important:
+ * Missing deadline is NOT treated as an upcoming event.
+ * We return PENDING_REVIEW so the UI can avoid presenting
+ * it as definitely open.
+ */
+export function resolveStatus(
+  registrationDeadline: string | null | undefined
+): EventStatus {
+  if (!registrationDeadline) {
+    return 'PENDING_REVIEW';
+  }
+
   const deadline = new Date(registrationDeadline).getTime();
-  if (isNaN(deadline)) return 'OPEN';
+
+  if (Number.isNaN(deadline)) {
+    return 'PENDING_REVIEW';
+  }
+
   const now = Date.now();
-  if (now > deadline) return 'EXPIRED';
-  const hoursLeft = (deadline - now) / (1000 * 60 * 60);
-  if (hoursLeft <= 48) return 'CLOSING_SOON';
+
+  if (deadline <= now) {
+    return 'EXPIRED';
+  }
+
+  const hoursLeft =
+    (deadline - now) / (1000 * 60 * 60);
+
+  if (hoursLeft <= 48) {
+    return 'CLOSING_SOON';
+  }
+
   const daysLeft = hoursLeft / 24;
-  if (daysLeft > 30) return 'UPCOMING';
+
+  if (daysLeft > 30) {
+    return 'UPCOMING';
+  }
+
   return 'OPEN';
 }
 
-export function generateSlug(title: string, platform: string, externalId: string): string {
+export function generateSlug(
+  title: string,
+  platform: string,
+  externalId: string
+): string {
   const base = title
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
@@ -284,32 +401,62 @@ export function generateSlug(title: string, platform: string, externalId: string
     .substring(0, 60)
     .replace(/(^-|-$)/g, '');
 
-  const platformSlug = platform.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const idHash = externalId.replace(/[^a-z0-9]/gi, '').slice(-6);
+  const platformSlug = platform
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  const idHash = externalId
+    .replace(/[^a-z0-9]/gi, '')
+    .slice(-6);
 
   return `${base}-${platformSlug}-${idHash}`;
 }
 
+// ---------------------------------------------------------------------------
+// India Relevance
+// ---------------------------------------------------------------------------
+
 export function isIndiaRelevant(raw: RawEvent): boolean {
-  // Always include ONLINE events — globally open to India students
   const mode = normalizeMode(raw.mode);
-  if (mode === 'ONLINE') return true;
 
-  // Check country field
-  const countryLower = (raw.country || '').toLowerCase();
-  if (countryLower.includes('india') || countryLower === 'in') return true;
+  // Online events can generally be accessed by Indian students.
+  if (mode === 'ONLINE') {
+    return true;
+  }
 
-  // Check state field — any Indian state means India-relevant
-  const stateNorm = normalizeState(raw.state);
-  if (stateNorm && STATE_NORMALIZATION[(raw.state || '').toLowerCase()]) return true;
+  // Explicit India country.
+  const countryLower = (raw.country || '')
+    .trim()
+    .toLowerCase();
 
-  // City could reveal location
-  const cityLower = (raw.city || '').toLowerCase();
-  if (CITY_NORMALIZATION[cityLower]) return true;
+  if (
+    countryLower === 'india' ||
+    countryLower === 'in' ||
+    countryLower.includes('india')
+  ) {
+    return true;
+  }
 
-  // If no location at all, assume it's potentially India-relevant
-  if (!raw.country && !raw.state && !raw.city) return true;
+  // Known Indian state.
+  if (raw.state) {
+    const stateLower = raw.state.trim().toLowerCase();
 
+    if (STATE_NORMALIZATION[stateLower]) {
+      return true;
+    }
+  }
+
+  // Known Indian city.
+  if (raw.city) {
+    const cityLower = raw.city.trim().toLowerCase();
+
+    if (CITY_NORMALIZATION[cityLower]) {
+      return true;
+    }
+  }
+
+  // Do NOT automatically assume unknown-location offline
+  // events are India-relevant.
   return false;
 }
 
@@ -317,78 +464,213 @@ export function isIndiaRelevant(raw: RawEvent): boolean {
 // Main Normalizer
 // ---------------------------------------------------------------------------
 
-export function normalizeRawEvent(raw: RawEvent): EventDocument {
+export function normalizeRawEvent(
+  raw: RawEvent
+): EventDocument {
   const now = new Date().toISOString();
+
   const category = normalizeCategory(raw.category);
   const mode = normalizeMode(raw.mode);
+
   const city = normalizeCity(raw.city);
   const state = normalizeState(raw.state);
-  const country = raw.country?.trim() || (mode === 'ONLINE' ? 'India/Global' : 'India');
 
-  // URL validation — never allow placeholder URLs
-  const { registrationUrl, registrationAvailable } = validateRegistrationUrl(raw.registrationUrl);
-  const sourceUrl = raw.sourceUrl && !isPlaceholderUrl(raw.sourceUrl) ? raw.sourceUrl.trim() : null;
+  const country =
+    raw.country?.trim() ||
+    (mode === 'ONLINE' ? 'Global' : null);
 
-  const status = resolveStatus(raw.registrationDeadline);
-  const title = raw.title || 'Untitled Opportunity';
-  const slug = generateSlug(title, raw.platform, raw.externalId);
+  // -------------------------------------------------------------------------
+  // Registration URL
+  // -------------------------------------------------------------------------
 
-  // Normalize skills — deduplicate, trim, filter empties
-  const skills = [...new Set((raw.skills || raw.tags || []).map(s => s.trim()).filter(Boolean))];
+  const {
+    registrationUrl,
+    registrationAvailable
+  } = validateRegistrationUrl(raw.registrationUrl);
 
+  const sourceUrl =
+    raw.sourceUrl &&
+    !isPlaceholderUrl(raw.sourceUrl)
+      ? raw.sourceUrl.trim()
+      : null;
+
+  // -------------------------------------------------------------------------
+  // Dates
+  // -------------------------------------------------------------------------
+
+  // IMPORTANT:
+  // We NEVER generate fake dates.
+  //
+  // If the source doesn't provide a date, it stays null.
+  // This prevents old/incomplete events from appearing as
+  // future hackathons.
+
+  const registrationDeadline =
+    raw.registrationDeadline || null;
+
+  const startDate =
+    raw.startDate || null;
+
+  const endDate =
+    raw.endDate || null;
+
+  const status = resolveStatus(registrationDeadline);
+
+  // -------------------------------------------------------------------------
+  // Basic fields
+  // -------------------------------------------------------------------------
+
+  const title =
+    raw.title?.trim() || 'Untitled Opportunity';
+
+  const slug = generateSlug(
+    title,
+    raw.platform,
+    raw.externalId
+  );
+
+  // -------------------------------------------------------------------------
+  // Description
+  // -------------------------------------------------------------------------
+
+  // Do not fabricate a description.
+  const description =
+    raw.description?.trim() || null;
+
+  // -------------------------------------------------------------------------
+  // Skills
+  // -------------------------------------------------------------------------
+
+  const skills = [
+    ...new Set(
+      (raw.skills || raw.tags || [])
+        .map(skill => skill.trim())
+        .filter(Boolean)
+    )
+  ];
+
+  // -------------------------------------------------------------------------
+  // Eligibility
+  // -------------------------------------------------------------------------
+
+  // Keep only eligibility actually supplied by the source.
+  const eligibility =
+    raw.eligibility?.length
+      ? [...new Set(
+          raw.eligibility
+            .map(item => item.trim())
+            .filter(Boolean)
+        )]
+      : [];
+
+  // -------------------------------------------------------------------------
   // Prize
-  const prize = raw.prizeAmount || raw.prizeDescription
-    ? {
-        amount: raw.prizeAmount ?? undefined,
-        currency: raw.prizeCurrency || 'INR',
-        description: raw.prizeDescription ?? undefined
-      }
-    : undefined;
+  // -------------------------------------------------------------------------
 
-  // Future dates if missing — keep them valid so they're not immediately "EXPIRED"
-  const futureWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const futureTwoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-  const futureThreeWeeks = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString();
+  let prize:
+    | {
+        amount?: number;
+        currency?: string;
+        description?: string;
+      }
+    | undefined;
+
+  if (
+    raw.prizeAmount != null ||
+    raw.prizeDescription
+  ) {
+    prize = {
+      amount:
+        raw.prizeAmount != null
+          ? raw.prizeAmount
+          : undefined,
+
+      currency:
+        raw.prizeCurrency || undefined,
+
+      description:
+        raw.prizeDescription || undefined
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Final canonical event
+  // -------------------------------------------------------------------------
 
   return {
     title,
+
     slug,
-    description: raw.description || `Join this ${category.replace('_', ' ').toLowerCase()} opportunity.`,
+
+    description,
+
     type: category,
+
     organizer: {
-      name: raw.organizerName || raw.platform,
-      website: raw.organizerWebsite ?? undefined
+      name:
+        raw.organizerName?.trim() ||
+        raw.platform,
+
+      website:
+        raw.organizerWebsite?.trim() || undefined
     },
+
     location: {
       country,
       state: state || null,
       city: city || null,
       mode
     },
+
     dates: {
-      registrationDeadline: raw.registrationDeadline || futureWeek,
-      startDate: raw.startDate || futureTwoWeeks,
-      endDate: raw.endDate || futureThreeWeeks
+      registrationDeadline,
+      startDate,
+      endDate
     },
-    eligibility: raw.eligibility?.length ? raw.eligibility : ['College Students', 'Developers'],
-    skills: skills.length > 0 ? skills : ['Technology'],
-    careerRoles: [],           // Populated later by eventRoleMatcher
-    careerRoleMatches: [],     // Populated later by eventRoleMatcher
+
+    eligibility,
+
+    skills,
+
+    careerRoles: [],
+
+    careerRoleMatches: [],
+
     prize,
+
     registrationUrl,
+
     registrationAvailable,
+
     source: {
       platform: raw.platform,
       sourceUrl: sourceUrl || undefined
     },
-    sources: [{
-      platform: raw.platform,
-      sourceEventId: raw.externalId,
-      sourceUrl: sourceUrl || registrationUrl || null
-    }],
-    status: registrationAvailable ? status : (status === 'EXPIRED' ? 'EXPIRED' : 'PENDING_REVIEW'),
+
+    sources: [
+      {
+        platform: raw.platform,
+        sourceEventId: raw.externalId,
+        sourceUrl:
+          sourceUrl ||
+          registrationUrl ||
+          null
+      }
+    ],
+
+    status:
+      registrationAvailable
+        ? status
+        : (
+            status === 'EXPIRED'
+              ? 'EXPIRED'
+              : 'PENDING_REVIEW'
+          ),
+
     lastSyncedAt: now,
+
     createdAt: now,
+
     updatedAt: now
   } as EventDocument & { sources: any[] };
 }

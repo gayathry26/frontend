@@ -1,285 +1,603 @@
-/**
- * Brabble API Source Adapter
- *
- * Brabble aggregates events from Devfolio, Unstop, Devpost, HackerEarth, MLH, and other platforms.
- * This adapter uses Brabble's public listings API to ingest the full aggregated India/global dataset.
- *
- * API: GET https://api.brabble.in/api/listings
- * Pagination: offset + limit + total
- */
+ /**
+  * Brabble API Source Adapter
+  *
+  * Brabble is used as an additional discovery source.
+  *
+  * Current API:
+  * GET https://brabble.ai/api/listings
+  *
+  * Authentication:
+  * Authorization: Bearer <BRABBLE_API_KEY>
+  *
+  * We request:
+  *   hub=hackathons
+  *   type=HACKATHON
+  *
+  * Brabble already removes expired listings and returns
+  * the organiser's registration URL.
+  */
 
-import { EventSource, RawEvent, FetchResult } from './EventSource';
+import {
+  EventSource,
+  RawEvent,
+  FetchResult,
+} from './EventSource';
 
-const BRABBLE_API_BASE = 'https://api.brabble.in';
-const PAGE_SIZE = 100;
+const BRABBLE_API_BASE =
+  'https://brabble.ai';
+
+const PAGE_SIZE = 200;
 const REQUEST_TIMEOUT_MS = 15000;
+const MAX_PAGES = 50;
 
 interface BrabbleListing {
   id?: string;
-  _id?: string;
+
   title?: string;
-  name?: string;
-  description?: string;
-  shortDescription?: string;
-  organizer?: string | { name?: string; website?: string } | null;
-  organizerName?: string;
-  organizerWebsite?: string;
 
-  registrationDeadline?: string;
-  deadline?: string;
-  endDate?: string;
-  startDate?: string;
-  start?: string;
-  end?: string;
-
-  mode?: string;
-  eventMode?: string;
-  isOnline?: boolean;
-  location?: string | { country?: string; state?: string; city?: string; mode?: string } | null;
-  city?: string;
-  state?: string;
-  country?: string;
+  organiser?: string;
 
   type?: string;
-  category?: string;
-  eventType?: string;
-  tags?: string[];
-  skills?: string[];
-  techStack?: string[];
 
-  prize?: number | string | { amount?: number; currency?: string; description?: string } | null;
-  prizeAmount?: number;
-  prizeCurrency?: string;
-  prizeDescription?: string;
-
-  registrationUrl?: string;
-  applyUrl?: string;
-  link?: string;
-  url?: string;
-  sourceUrl?: string;
-  platformLink?: string;
+  kind?: 'competition' | 'contest' | string;
 
   platform?: string;
-  source?: string;
-  sourcePlatform?: string;
 
-  minTeamSize?: number;
-  maxTeamSize?: number;
+  url?: string;
+
+  shareUrl?: string;
+
+  deadline?: string;
+
+  mode?: 'ONLINE' | 'OFFLINE' | 'HYBRID' | string;
+
+  city?: string;
+
+  prize?: {
+    label?: string;
+    inr?: number | null;
+  } | null;
+
+  team?: string;
+
+  fee?: string;
+
   eligibility?: string[];
+
+  registered?: number | null;
 }
 
 interface BrabbleApiResponse {
-  data?: BrabbleListing[];
-  listings?: BrabbleListing[];
-  results?: BrabbleListing[];
-  items?: BrabbleListing[];
+  refreshedAt?: string;
+
+  origin?: 'store' | 'live' | string;
+
   total?: number;
+
   count?: number;
+
   offset?: number;
+
   limit?: number;
-  success?: boolean;
+
+  listings?: BrabbleListing[];
+
+  attribution?: string;
+
+  docs?: string;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+/**
+ * Fetch Brabble API with timeout.
+ */
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const apiKey =
+    process.env.BRABBLE_API_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      'BRABBLE_API_KEY is not configured'
+    );
+  }
+
+  const controller =
+    new AbortController();
+
+  const timer =
+    setTimeout(
+      () => controller.abort(),
+      timeoutMs
+    );
+
   try {
-    const res = await fetch(url, {
+    return await fetch(url, {
       signal: controller.signal,
+
       headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'IT-Career-Explorer/1.0 (+https://github.com/it-career-explorer)'
-      }
+        Accept:
+          'application/json',
+
+        'User-Agent':
+          'IT-Career-Explorer/1.0',
+
+        Authorization:
+          `Bearer ${apiKey}`,
+      },
     });
-    return res;
   } finally {
     clearTimeout(timer);
   }
 }
 
-function extractBrabbleEvents(data: BrabbleApiResponse): BrabbleListing[] {
-  return data.data || data.listings || data.results || data.items || [];
-}
-
-function getTotal(data: BrabbleApiResponse, listingsLength: number): number {
-  return data.total ?? data.count ?? listingsLength;
-}
-
-function normalizeBrabbleListing(raw: BrabbleListing): RawEvent {
-  // Resolve organizer
-  let orgName: string | null = null;
-  let orgWebsite: string | null = null;
-  if (typeof raw.organizer === 'string') {
-    orgName = raw.organizer || null;
-  } else if (raw.organizer && typeof raw.organizer === 'object') {
-    orgName = raw.organizer.name || null;
-    orgWebsite = raw.organizer.website || null;
-  }
-  orgName = orgName || raw.organizerName || null;
-  orgWebsite = orgWebsite || raw.organizerWebsite || null;
-
-  // Resolve location
-  let country: string | null = null;
-  let state: string | null = null;
-  let city: string | null = null;
-  let mode: string | null = null;
-
-  if (typeof raw.location === 'object' && raw.location !== null) {
-    country = raw.location.country || null;
-    state = raw.location.state || null;
-    city = raw.location.city || null;
-    mode = raw.location.mode || null;
-  } else if (typeof raw.location === 'string') {
-    city = raw.location || null;
-  }
-  country = country || raw.country || null;
-  state = state || raw.state || null;
-  city = city || raw.city || null;
-
-  // Resolve mode
-  if (!mode) {
-    if (raw.mode) mode = raw.mode;
-    else if (raw.eventMode) mode = raw.eventMode;
-    else if (raw.isOnline === true) mode = 'ONLINE';
-    else if (raw.isOnline === false) mode = 'OFFLINE';
+/**
+ * Parse team size strings such as:
+ *
+ * "1-4"
+ * "2-5"
+ * "Individual"
+ */
+function extractTeamSize(
+  team: string | undefined
+): {
+  min: number | null;
+  max: number | null;
+} {
+  if (!team) {
+    return {
+      min: null,
+      max: null,
+    };
   }
 
-  // Resolve prize
-  let prizeAmount: number | null = null;
-  let prizeCurrency: string | null = null;
-  let prizeDescription: string | null = null;
-  if (typeof raw.prize === 'number') {
-    prizeAmount = raw.prize;
-  } else if (typeof raw.prize === 'string') {
-    prizeDescription = raw.prize;
-    const match = raw.prize.match(/[\d,]+/);
-    if (match) prizeAmount = parseInt(match[0].replace(',', ''), 10);
-  } else if (raw.prize && typeof raw.prize === 'object') {
-    prizeAmount = raw.prize.amount ?? raw.prizeAmount ?? null;
-    prizeCurrency = raw.prize.currency ?? raw.prizeCurrency ?? null;
-    prizeDescription = raw.prize.description ?? raw.prizeDescription ?? null;
+  const value =
+    team.trim();
+
+  const range =
+    value.match(
+      /(\d+)\s*[-–]\s*(\d+)/
+    );
+
+  if (range) {
+    return {
+      min: Number(range[1]),
+      max: Number(range[2]),
+    };
   }
 
-  // Resolve URLs
-  const registrationUrl = raw.registrationUrl || raw.applyUrl || raw.link || raw.url || null;
-  const sourceUrl = raw.sourceUrl || raw.platformLink || raw.link || raw.url || null;
+  const single =
+    value.match(/\d+/);
 
-  // Resolve platform
-  const platform = raw.platform || raw.source || raw.sourcePlatform || 'Brabble';
+  if (single) {
+    const number =
+      Number(single[0]);
 
-  // Resolve skills
-  const skills: string[] = [
-    ...(raw.skills || []),
-    ...(raw.techStack || []),
-    ...(raw.tags || [])
-  ].filter(Boolean);
+    return {
+      min: number,
+      max: number,
+    };
+  }
 
   return {
-    externalId: `brabble-${raw._id || raw.id || Math.random().toString(36).slice(2)}`,
-    platform,
-    title: raw.title || raw.name || 'Untitled Event',
-    description: raw.description || raw.shortDescription || null,
-    organizerName: orgName,
-    organizerWebsite: orgWebsite,
-    registrationDeadline: raw.registrationDeadline || raw.deadline || raw.end || null,
-    startDate: raw.startDate || raw.start || null,
-    endDate: raw.endDate || raw.end || null,
-    mode: mode as any,
-    country,
-    state,
-    city,
-    category: raw.type || raw.category || raw.eventType || null,
-    tags: raw.tags || [],
-    skills: [...new Set(skills)],
-    prizeAmount,
-    prizeCurrency,
-    prizeDescription,
-    registrationUrl,
-    sourceUrl: sourceUrl !== registrationUrl ? sourceUrl : null,
-    minTeamSize: raw.minTeamSize || null,
-    maxTeamSize: raw.maxTeamSize || null,
-    eligibility: raw.eligibility || [],
-    rawPayload: raw as any
+    min: null,
+    max: null,
   };
 }
 
-export class BrabbleSource implements EventSource {
+/**
+ * Extract prize.
+ *
+ * Brabble's prize.inr is already the best
+ * available parsed INR value.
+ */
+function extractPrize(
+  listing: BrabbleListing
+): {
+  amount: number | null;
+  currency: string | null;
+  description: string | null;
+} {
+  const amount =
+    listing.prize?.inr ??
+    null;
+
+  const description =
+    listing.prize?.label ||
+    null;
+
+  return {
+    amount,
+    currency:
+      amount !== null
+        ? 'INR'
+        : null,
+    description,
+  };
+}
+
+/**
+ * Check whether the listing is still open.
+ *
+ * Brabble promises expired listings are removed,
+ * but we perform our own safety check as well.
+ */
+function isStillOpen(
+  deadline: string | undefined
+): boolean {
+  if (!deadline) {
+    return false;
+  }
+
+  const timestamp =
+    Date.parse(deadline);
+
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+
+  return (
+    timestamp >= Date.now()
+  );
+}
+
+/**
+ * Normalize one Brabble listing.
+ */
+function normalizeBrabbleListing(
+  raw: BrabbleListing
+): RawEvent {
+  const teamSize =
+    extractTeamSize(raw.team);
+
+  const prize =
+    extractPrize(raw);
+
+  /*
+   * Brabble's `url` is the organiser/platform
+   * destination where registration happens.
+   *
+   * `shareUrl` is Brabble's own page and should
+   * NOT be used as the student's registration URL.
+   */
+  const registrationUrl =
+    raw.url || null;
+
+  /*
+   * Brabble itself is the discovery source.
+   * The organiser URL is kept as registrationUrl.
+   *
+   * We don't have to expose shareUrl to students.
+   */
+  const sourceUrl =
+    raw.shareUrl ||
+    raw.url ||
+    null;
+
+  return {
+    externalId:
+      raw.id
+        ? `brabble-${raw.id}`
+        : `brabble-${Buffer.from(
+            raw.title || 'unknown'
+          )
+            .toString('base64')
+            .slice(0, 20)}`,
+
+    platform:
+      `Brabble:${raw.platform || 'Unknown'}`,
+
+    title:
+      raw.title ||
+      'Untitled Hackathon',
+
+    description:
+      null,
+
+    organizerName:
+      raw.organiser ||
+      null,
+
+    /*
+     * Brabble does not provide an organiser
+     * website separately.
+     */
+    organizerWebsite:
+      null,
+
+    /*
+     * Brabble's deadline has meaning depending
+     * on `kind`.
+     *
+     * For hackathons we requested type=HACKATHON,
+     * and competition-style entries use deadline
+     * as the application closing time.
+     */
+    registrationDeadline:
+      raw.deadline ||
+      null,
+
+    /*
+     * Brabble does not expose a separate start
+     * date in its current listing schema.
+     *
+     * Do NOT invent one.
+     */
+    startDate:
+      null,
+
+    endDate:
+      null,
+
+    mode:
+      raw.mode as any,
+
+    /*
+     * Brabble city is free text and can sometimes
+     * be empty or "See listing".
+     */
+    country:
+      'India',
+
+    state:
+      null,
+
+    city:
+      raw.city &&
+      raw.city !== 'See listing'
+        ? raw.city
+        : null,
+
+    venue:
+      null,
+
+    category:
+      'HACKATHON',
+
+    tags:
+      [],
+
+    skills:
+      [],
+
+    prizeAmount:
+      prize.amount,
+
+    prizeCurrency:
+      prize.currency,
+
+    prizeDescription:
+      prize.description,
+
+    registrationUrl,
+
+    sourceUrl,
+
+    minTeamSize:
+      teamSize.min,
+
+    maxTeamSize:
+      teamSize.max,
+
+    eligibility:
+      Array.isArray(
+        raw.eligibility
+      )
+        ? raw.eligibility
+        : null,
+
+    rawPayload:
+      raw as any,
+  };
+}
+
+export class BrabbleSource
+  implements EventSource {
+
   name = 'Brabble';
 
   async isAvailable(): Promise<boolean> {
     try {
-      const res = await fetchWithTimeout(`${BRABBLE_API_BASE}/api/listings?limit=1&offset=0`, 5000);
-      return res.ok || res.status === 200;
-    } catch {
+      if (
+        !process.env.BRABBLE_API_KEY
+      ) {
+        console.warn(
+          '[BrabbleSource] ' +
+          'BRABBLE_API_KEY is not configured.'
+        );
+
+        return false;
+      }
+
+      const url =
+        `${BRABBLE_API_BASE}` +
+        `/api/listings` +
+        `?hub=hackathons` +
+        `&type=HACKATHON` +
+        `&limit=1` +
+        `&offset=0`;
+
+      const response =
+        await fetchWithTimeout(
+          url,
+          5000
+        );
+
+      return response.ok;
+    } catch (error: any) {
+      console.warn(
+        '[BrabbleSource] ' +
+        `Availability check failed: ${
+          error?.message ||
+          String(error)
+        }`
+      );
+
       return false;
     }
   }
 
   async fetchEvents(): Promise<FetchResult> {
     const allEvents: RawEvent[] = [];
+
     let offset = 0;
-    let totalPages = 1;
+
+    let total =
+      Infinity;
+
     let pagesFetched = 0;
-    let error: string | null = null;
+
+    let error:
+      string | null = null;
 
     try {
-      // First request — discover total
-      const firstUrl = `${BRABBLE_API_BASE}/api/listings?limit=${PAGE_SIZE}&offset=0`;
-      const firstRes = await fetchWithTimeout(firstUrl);
+      while (
+        offset < total &&
+        pagesFetched < MAX_PAGES
+      ) {
+        const url =
+          `${BRABBLE_API_BASE}` +
+          `/api/listings` +
+          `?hub=hackathons` +
+          `&type=HACKATHON` +
+          `&limit=${PAGE_SIZE}` +
+          `&offset=${offset}`;
 
-      if (!firstRes.ok) {
-        throw new Error(`Brabble API returned status ${firstRes.status}`);
-      }
+        const response =
+          await fetchWithTimeout(
+            url
+          );
 
-      const firstData: BrabbleApiResponse = await firstRes.json();
-      const firstListings = extractBrabbleEvents(firstData);
-      const total = getTotal(firstData, firstListings.length);
+        if (!response.ok) {
+          throw new Error(
+            `Brabble API returned status ${response.status}`
+          );
+        }
 
-      firstListings.forEach(listing => allEvents.push(normalizeBrabbleListing(listing)));
-      offset = PAGE_SIZE;
-      pagesFetched++;
+        const data:
+          BrabbleApiResponse =
+            await response.json();
 
-      // Continue paginating through all available records
-      while (offset < total) {
-        try {
-          const pageUrl = `${BRABBLE_API_BASE}/api/listings?limit=${PAGE_SIZE}&offset=${offset}`;
-          const pageRes = await fetchWithTimeout(pageUrl);
+        const listings =
+          Array.isArray(
+            data.listings
+          )
+            ? data.listings
+            : [];
 
-          if (!pageRes.ok) {
-            console.warn(`[BrabbleSource] Page at offset=${offset} returned ${pageRes.status}, stopping pagination.`);
-            break;
+        if (
+          listings.length === 0
+        ) {
+          break;
+        }
+
+        if (
+          typeof data.total ===
+          'number'
+        ) {
+          total =
+            data.total;
+        } else {
+          total =
+            listings.length;
+        }
+
+        for (
+          const listing
+          of listings
+        ) {
+          /*
+           * Extra validation.
+           *
+           * The API already filters to HACKATHON,
+           * but don't trust an unexpected response.
+           */
+          if (
+            String(
+              listing.type || ''
+            ).toUpperCase() !==
+            'HACKATHON'
+          ) {
+            continue;
           }
 
-          const pageData: BrabbleApiResponse = await pageRes.json();
-          const pageListings = extractBrabbleEvents(pageData);
-
-          if (pageListings.length === 0) break; // No more results
-
-          pageListings.forEach(listing => allEvents.push(normalizeBrabbleListing(listing)));
-          offset += PAGE_SIZE;
-          pagesFetched++;
-
-          // Safety cap to prevent infinite loops
-          if (pagesFetched > 50) {
-            console.warn('[BrabbleSource] Reached page cap (50), stopping pagination.');
-            break;
+          /*
+           * Brabble promises expired listings are
+           * removed. Still validate locally.
+           */
+          if (
+            !isStillOpen(
+              listing.deadline
+            )
+          ) {
+            continue;
           }
-        } catch (pageErr: any) {
-          console.warn(`[BrabbleSource] Error at offset=${offset}: ${pageErr.message}`);
+
+          /*
+           * Registration destination must exist.
+           */
+          if (!listing.url) {
+            continue;
+          }
+
+          allEvents.push(
+            normalizeBrabbleListing(
+              listing
+            )
+          );
+        }
+
+        pagesFetched++;
+
+        /*
+         * API echoes the actual limit after clamping.
+         */
+        const returnedLimit =
+          data.limit ||
+          PAGE_SIZE;
+
+        offset +=
+          returnedLimit;
+
+        /*
+         * Short page = no more records.
+         */
+        if (
+          listings.length <
+          returnedLimit
+        ) {
           break;
         }
       }
 
-      console.log(`[BrabbleSource] Fetched ${allEvents.length} events across ${pagesFetched} page(s). Total reported: ${total}.`);
+      console.log(
+        `[BrabbleSource] ` +
+        `Fetched ${allEvents.length} ` +
+        `open hackathons across ` +
+        `${pagesFetched} page(s). ` +
+        `Total reported: ${total}.`
+      );
     } catch (err: any) {
-      error = `BrabbleSource fetch error: ${err.message}`;
-      console.error(`[BrabbleSource] ${error}`);
+      error =
+        `BrabbleSource fetch error: ${
+          err?.message ||
+          String(err)
+        }`;
+
+      console.error(
+        `[BrabbleSource] ${error}`
+      );
     }
 
     return {
-      events: allEvents,
-      fetchedCount: allEvents.length,
-      error
+      events:
+        allEvents,
+
+      fetchedCount:
+        allEvents.length,
+
+      error,
     };
   }
 }
