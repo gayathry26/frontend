@@ -1,38 +1,42 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { 
-  Calendar, MapPin, ExternalLink, Trophy, Code2, 
-  Zap, Globe, ChevronRight, Cpu, Flame
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Calendar,
+  ChevronRight,
+  Clock,
+  Code2,
+  Cpu,
+  ExternalLink,
+  Flame,
+  Globe,
+  MapPin,
+  Trophy,
+  Zap
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface HackathonEvent {
   id: string;
   title: string;
-  eventType: string;
   startDate?: string;
   endDate?: string;
+  registrationDeadline?: string;
   organizer?: string;
   college?: string;
+  location?: string;
   city?: string;
   state?: string;
-  country: string;
+  country?: string;
   description?: string;
-  eligibility?: string;
   prize?: string;
-  registrationFee?: string;
-  registrationDeadline?: string;
   registrationUrl?: string;
-  eventUrl: string;
   sourceUrl?: string;
-  posterImage?: string;
+  eventUrl?: string;
+  imageUrl?: string;
   source: string;
   mode?: "Online" | "Offline" | "Hybrid" | "Unknown";
   technologies?: string[];
-  themes?: string[];
-  scrapedAt: string;
 }
 
 const modeColors: Record<string, string> = {
@@ -61,19 +65,18 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
   ];
   const accent = accentColors[index % accentColors.length];
 
-  // Clean title: strip trailing college name if it looks duplicated
+  // Clean duplicate organizer name from the title if present
   const cleanTitle = (() => {
     const t = hackathon.title.trim();
-    // If title ends with college/org name that is already shown separately
-    const collegePart = hackathon.college || hackathon.organizer || "";
-    if (collegePart && t.endsWith(collegePart) && t.length > collegePart.length + 10) {
-      return t.slice(0, t.length - collegePart.length).trim().replace(/[-–—,]+$/, "").trim();
+    const org = hackathon.college || hackathon.organizer || "";
+    if (org && t.endsWith(org) && t.length > org.length + 5) {
+      return t.slice(0, t.length - org.length).trim().replace(/[-–—,]+$/, "").trim();
     }
     return t;
   })();
 
   const techs = (hackathon.technologies || []).slice(0, 3);
-  const location = [hackathon.city, hackathon.state].filter(Boolean).join(", ");
+  const location = [hackathon.city, hackathon.state].filter(Boolean).join(", ") || hackathon.location;
 
   return (
     <div className="group relative bg-card border border-border rounded-2xl overflow-hidden hover:border-transparent transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 flex flex-col">
@@ -93,7 +96,7 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
       <div className="p-5 flex flex-col flex-1">
         {/* Header */}
         <div className="mb-3">
-          <div className="flex items-start gap-2 mb-2">
+          <div className="flex items-start gap-2 mb-2 pr-8">
             <div className={`p-1.5 rounded-lg bg-gradient-to-br ${accent} opacity-90 shrink-0 mt-0.5`}>
               <Trophy className="h-3.5 w-3.5 text-white" />
             </div>
@@ -109,15 +112,21 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
           )}
         </div>
 
-        {/* Meta info */}
+        {/* Meta info: Shows Start Date if known, otherwise shows Registration Deadline */}
         <div className="flex flex-col gap-1.5 mb-3">
-          {hackathon.startDate && (
+          {hackathon.startDate ? (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Calendar className="h-3 w-3 shrink-0" />
-              <span>{hackathon.startDate}</span>
+              <span>Starts: {hackathon.startDate}</span>
             </div>
-          )}
-          {location && (
+          ) : hackathon.registrationDeadline ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3 shrink-0 text-amber-500/80" />
+              <span>Deadline: {hackathon.registrationDeadline}</span>
+            </div>
+          ) : null}
+
+          {location && hackathon.mode !== "Online" && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <MapPin className="h-3 w-3 shrink-0" />
               <span className="line-clamp-1">{location}</span>
@@ -152,7 +161,7 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
 
         {/* CTA */}
         {(() => {
-          const targetUrl = hackathon.registrationUrl || hackathon.sourceUrl || hackathon.eventUrl;
+          const targetUrl = hackathon.registrationUrl || hackathon.sourceUrl || hackathon.eventUrl || "#";
           return (
             <a
               href={targetUrl}
@@ -178,15 +187,7 @@ export function TopHackathons() {
   useEffect(() => {
     import("@/data/hackathons.json").then((mod) => {
       const data: HackathonEvent[] = mod.default as HackathonEvent[];
-      // Sort: prioritise recent years, then by startDate
-      const sorted = [...data]
-        .filter(h => h.title && !h.title.includes("Participate in Events"))
-        .sort((a, b) => {
-          const yearA = a.startDate ? parseInt(a.startDate.split(" ").pop() || "0") : 0;
-          const yearB = b.startDate ? parseInt(b.startDate.split(" ").pop() || "0") : 0;
-          return yearB - yearA;
-        });
-      setHackathons(sorted);
+      setHackathons(data || []);
     });
   }, []);
 
@@ -198,11 +199,18 @@ export function TopHackathons() {
 
   const displayed = showAll ? filtered : filtered.slice(0, 9);
 
+  // Accurate stat calculations matching Unstop ISO dates and titles
   const stats = {
     total: hackathons.length,
     online: hackathons.filter(h => h.mode === "Online").length,
     cities: new Set(hackathons.map(h => h.city).filter(Boolean)).size,
-    recent2026: hackathons.filter(h => h.startDate?.includes("2026")).length,
+    recent2026: hackathons.filter(h => 
+      h.startDate?.includes("2026") ||
+      h.endDate?.includes("2026") ||
+      h.registrationDeadline?.includes("2026") ||
+      h.title?.includes("2026") ||
+      h.title?.includes("'26")
+    ).length,
   };
 
   return (
@@ -213,7 +221,7 @@ export function TopHackathons() {
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-full px-4 py-1.5 mb-4">
             <Flame className="h-4 w-4 text-orange-500" />
-            <span className="text-sm font-medium text-orange-500">Live Scraped from Knowafest</span>
+            <span className="text-sm font-medium text-orange-500">Live Scraped from Unstop</span>
           </div>
 
           <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-3">
@@ -223,7 +231,7 @@ export function TopHackathons() {
             </span>
           </h2>
           <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-            Discover real hackathon events from Indian colleges and institutions — compete, innovate, and level up.
+            Discover active coding challenges and national tech buildathons — compete, innovate, and level up.
           </p>
         </div>
 
@@ -297,12 +305,12 @@ export function TopHackathons() {
         <div className="text-center mt-10 text-xs text-muted-foreground">
           Data sourced from{" "}
           <a
-            href="https://www.knowafest.com"
+            href="https://unstop.com/hackathons"
             target="_blank"
             rel="noopener noreferrer"
             className="underline underline-offset-2 hover:text-foreground transition-colors"
           >
-            Knowafest.com
+            Unstop.com
           </a>
         </div>
       </div>
