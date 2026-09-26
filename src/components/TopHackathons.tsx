@@ -14,7 +14,7 @@ import {
   Trophy,
   Zap
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface HackathonEvent {
   id: string;
@@ -65,7 +65,6 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
   ];
   const accent = accentColors[index % accentColors.length];
 
-  // Clean duplicate organizer name from the title if present
   const cleanTitle = (() => {
     const t = hackathon.title.trim();
     const org = hackathon.college || hackathon.organizer || "";
@@ -80,21 +79,17 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
 
   return (
     <div className="group relative bg-card border border-border rounded-2xl overflow-hidden hover:border-transparent transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 flex flex-col">
-      {/* Gradient top bar */}
       <div className={`h-1 w-full bg-gradient-to-r ${accent}`} />
 
-      {/* Rank badge */}
       <div className="absolute top-4 right-4 z-10">
         <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${accent} flex items-center justify-center text-white text-xs font-bold shadow-lg`}>
           #{index + 1}
         </div>
       </div>
 
-      {/* Glow on hover */}
       <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br ${accent} rounded-2xl blur-xl -z-10 scale-110`} />
 
       <div className="p-5 flex flex-col flex-1">
-        {/* Header */}
         <div className="mb-3">
           <div className="flex items-start gap-2 mb-2 pr-8">
             <div className={`p-1.5 rounded-lg bg-gradient-to-br ${accent} opacity-90 shrink-0 mt-0.5`}>
@@ -112,7 +107,6 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
           )}
         </div>
 
-        {/* Meta info: Shows Start Date if known, otherwise shows Registration Deadline */}
         <div className="flex flex-col gap-1.5 mb-3">
           {hackathon.startDate ? (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -134,7 +128,6 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
           )}
         </div>
 
-        {/* Mode + Tech badges */}
         <div className="flex flex-wrap gap-1.5 mb-3">
           {hackathon.mode && hackathon.mode !== "Unknown" && (
             <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${modeColors[hackathon.mode]}`}>
@@ -148,7 +141,6 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
           ))}
         </div>
 
-        {/* Prize if available */}
         {hackathon.prize && (
           <div className="flex items-center gap-1.5 mb-3 bg-amber-500/10 rounded-lg px-3 py-1.5">
             <Zap className="h-3 w-3 text-amber-400 shrink-0" />
@@ -156,10 +148,8 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
           </div>
         )}
 
-        {/* Spacer */}
         <div className="flex-1" />
 
-        {/* CTA */}
         {(() => {
           const targetUrl = hackathon.registrationUrl || hackathon.sourceUrl || hackathon.eventUrl || "#";
           return (
@@ -182,6 +172,7 @@ function HackathonCard({ hackathon, index }: { hackathon: HackathonEvent; index:
 export function TopHackathons() {
   const [hackathons, setHackathons] = useState<HackathonEvent[]>([]);
   const [filter, setFilter] = useState<string>("All");
+  const [selectedLocation, setSelectedLocation] = useState<string>("All");
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
@@ -193,23 +184,40 @@ export function TopHackathons() {
 
   const filters = ["All", "Online", "Offline", "Hybrid"];
 
-  const filtered = hackathons.filter(h =>
-    filter === "All" || h.mode === filter
-  );
+  // Extract unique cities/locations sorted alphabetically
+  const uniqueLocations = useMemo(() => {
+    const cities = hackathons
+      .map((h) => h.city?.trim())
+      .filter((city): city is string => Boolean(city && city.toLowerCase() !== "online"));
+    return Array.from(new Set(cities)).sort((a, b) => a.localeCompare(b));
+  }, [hackathons]);
+
+  // Filter by both mode and location
+  const filtered = useMemo(() => {
+    return hackathons.filter((h) => {
+      const matchesMode = filter === "All" || h.mode === filter;
+      const matchesLocation =
+        selectedLocation === "All" ||
+        h.city?.toLowerCase() === selectedLocation.toLowerCase() ||
+        h.location?.toLowerCase().includes(selectedLocation.toLowerCase());
+
+      return matchesMode && matchesLocation;
+    });
+  }, [hackathons, filter, selectedLocation]);
 
   const displayed = showAll ? filtered : filtered.slice(0, 9);
 
-  // Accurate stat calculations matching Unstop ISO dates and titles
   const stats = {
     total: hackathons.length,
-    online: hackathons.filter(h => h.mode === "Online").length,
-    cities: new Set(hackathons.map(h => h.city).filter(Boolean)).size,
-    recent2026: hackathons.filter(h => 
-      h.startDate?.includes("2026") ||
-      h.endDate?.includes("2026") ||
-      h.registrationDeadline?.includes("2026") ||
-      h.title?.includes("2026") ||
-      h.title?.includes("'26")
+    online: hackathons.filter((h) => h.mode === "Online").length,
+    cities: uniqueLocations.length,
+    recent2026: hackathons.filter(
+      (h) =>
+        h.startDate?.includes("2026") ||
+        h.endDate?.includes("2026") ||
+        h.registrationDeadline?.includes("2026") ||
+        h.title?.includes("2026") ||
+        h.title?.includes("'26")
     ).length,
   };
 
@@ -251,24 +259,48 @@ export function TopHackathons() {
           ))}
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center justify-center gap-2 mb-8 flex-wrap">
-          {filters.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                filter === f
-                  ? "bg-primary text-primary-foreground border-primary shadow-md"
-                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-          <span className="text-xs text-muted-foreground ml-2">
-            {filtered.length} events
-          </span>
+        {/* Filter Toolbar: Mode Buttons + Location Dropdown */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
+          {/* Mode Pills */}
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            {filters.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                  filter === f
+                    ? "bg-primary text-primary-foreground border-primary shadow-md"
+                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+
+          {/* Location Dropdown */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <select
+                value={selectedLocation}
+                onChange={(e) => setSelectedLocation(e.target.value)}
+                className="appearance-none bg-card border border-border text-foreground text-sm rounded-full pl-9 pr-8 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer hover:border-primary/50 transition-colors shadow-sm"
+              >
+                <option value="All">All Locations</option>
+                {uniqueLocations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground rotate-90 pointer-events-none" />
+            </div>
+
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {filtered.length} events
+            </span>
+          </div>
         </div>
 
         {/* Hackathon Cards Grid */}
@@ -276,6 +308,12 @@ export function TopHackathons() {
           <div className="text-center py-16 text-muted-foreground">
             <Code2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
             <p>Loading hackathons...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-2xl max-w-md mx-auto">
+            <MapPin className="h-10 w-10 mx-auto mb-2 opacity-30" />
+            <p className="font-medium text-foreground">No hackathons found</p>
+            <p className="text-xs mt-1">Try switching to &quot;All Locations&quot; or another mode filter.</p>
           </div>
         ) : (
           <>
